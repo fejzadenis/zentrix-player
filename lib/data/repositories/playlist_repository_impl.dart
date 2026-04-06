@@ -47,27 +47,73 @@ class PlaylistRepositoryImpl implements PlaylistRepository {
       password: password,
     );
 
-    final models = await _xtreamDatasource.getLiveStreams(
-      server: server,
-      username: username,
-      password: password,
-    );
+    final results = await Future.wait([
+      _fetchLiveWithCategories(server, username, password),
+      _fetchVodWithCategories(server, username, password),
+      _fetchSeriesWithCategories(server, username, password),
+    ]);
 
-    final categoriesModels = await _xtreamDatasource.getLiveCategories(
-      server: server,
-      username: username,
-      password: password,
-    );
+    return [...results[0], ...results[1], ...results[2]];
+  }
 
-    final categoryMap = {
-      for (final cat in categoriesModels) cat.id: cat.name,
-    };
-
-    for (final model in models) {
-      model.category = categoryMap[model.category] ?? model.category;
+  Future<List<Channel>> _fetchLiveWithCategories(
+    String server, String username, String password,
+  ) async {
+    try {
+      final models = await _xtreamDatasource.getLiveStreams(
+        server: server, username: username, password: password,
+      );
+      final cats = await _xtreamDatasource.getLiveCategories(
+        server: server, username: username, password: password,
+      );
+      final catMap = {for (final c in cats) c.id: c.name};
+      for (final m in models) {
+        m.category = catMap[m.category] ?? m.category;
+      }
+      return models.map((m) => m.toEntity()).toList();
+    } catch (_) {
+      return [];
     }
+  }
 
-    return models.map((m) => m.toEntity()).toList();
+  Future<List<Channel>> _fetchVodWithCategories(
+    String server, String username, String password,
+  ) async {
+    try {
+      final models = await _xtreamDatasource.getVodStreams(
+        server: server, username: username, password: password,
+      );
+      final cats = await _xtreamDatasource.getVodCategories(
+        server: server, username: username, password: password,
+      );
+      final catMap = {for (final c in cats) c.id: c.name};
+      for (final m in models) {
+        m.category = catMap[m.category] ?? m.category;
+      }
+      return models.map((m) => m.toEntity()).toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  Future<List<Channel>> _fetchSeriesWithCategories(
+    String server, String username, String password,
+  ) async {
+    try {
+      final models = await _xtreamDatasource.getSeriesStreams(
+        server: server, username: username, password: password,
+      );
+      final cats = await _xtreamDatasource.getSeriesCategories(
+        server: server, username: username, password: password,
+      );
+      final catMap = {for (final c in cats) c.id: c.name};
+      for (final m in models) {
+        m.category = catMap[m.category] ?? m.category;
+      }
+      return models.map((m) => m.toEntity()).toList();
+    } catch (_) {
+      return [];
+    }
   }
 
   @override

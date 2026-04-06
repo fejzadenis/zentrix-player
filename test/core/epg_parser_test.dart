@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:iptv_app/core/utils/epg_parser.dart';
+import 'package:zentrix/core/utils/epg_parser.dart';
 
 void main() {
   group('EpgParser', () {

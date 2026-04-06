@@ -51,7 +51,7 @@ class ChannelRepositoryImpl implements ChannelRepository {
 
     categories.insert(
       0,
-      Category(id: 'all', name: 'All Channels', channelCount: all.length),
+      Category(id: 'all', name: 'All', channelCount: all.length),
     );
 
     return categories;

@@ -9,7 +9,6 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 import '../../../core/l10n/app_localizations.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../providers/player_provider.dart';
-import '../../widgets/player_controls.dart';
 
 class PlayerScreen extends ConsumerStatefulWidget {
   final String streamUrl;
@@ -37,35 +36,25 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   bool _isBuffering = true;
   bool _hasError = false;
   String? _errorMessage;
-  bool _isPlaying = false;
-  final List<String> _debugLog = [];
-  bool _showDebug = false;
   static const int _maxReconnectAttempts = 3;
+
+  // Volume & brightness
+  double _volume = 1.0;
+  double _brightness = 0.5;
+  bool _showVolumeSlider = false;
+  bool _showBrightnessSlider = false;
+  Timer? _sliderHideTimer;
 
   StreamSubscription? _playingSub;
   StreamSubscription? _bufferingSub;
   StreamSubscription? _errorSub;
   StreamSubscription? _completedSub;
 
-  void _log(String message) {
-    dev.log('[IPTV Player] $message');
-    if (mounted) {
-      setState(() {
-        _debugLog.add(
-            '[${DateTime.now().toIso8601String().substring(11, 19)}] $message');
-        if (_debugLog.length > 50) _debugLog.removeAt(0);
-      });
-    }
-  }
-
   @override
   void initState() {
     super.initState();
     WakelockPlus.enable();
     _startHideTimer();
-
-    _log('Channel: ${widget.channelName}');
-    _log('Stream URL: ${widget.streamUrl}');
 
     _player = Player();
     _videoController = VideoController(_player);
@@ -87,19 +76,17 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   void _setupListeners() {
     _playingSub = _player.stream.playing.listen((playing) {
       if (!mounted) return;
-      _log('Playing: $playing');
-      setState(() => _isPlaying = playing);
+      setState(() {});
     });
 
     _bufferingSub = _player.stream.buffering.listen((buffering) {
       if (!mounted) return;
-      if (buffering) _log('Buffering...');
       setState(() => _isBuffering = buffering);
     });
 
     _errorSub = _player.stream.error.listen((error) {
       if (!mounted) return;
-      _log('ERROR from player: $error');
+      dev.log('[Zentrix Player] ERROR: $error');
       setState(() {
         _hasError = true;
         _errorMessage = error;
@@ -109,17 +96,18 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
     _completedSub = _player.stream.completed.listen((completed) {
       if (!mounted || !completed) return;
-      _log('Stream completed, attempting reconnect...');
       _attemptReconnect();
+    });
+
+    _player.stream.volume.listen((vol) {
+      if (!mounted) return;
+      setState(() => _volume = vol / 100.0);
     });
   }
 
   Future<void> _initPlayer() async {
-    _log('Initializing player (attempt ${_reconnectAttempts + 1})...');
-
     final url = widget.streamUrl;
     if (url.isEmpty) {
-      _log('ERROR: Stream URL is empty!');
       setState(() {
         _hasError = true;
         _isBuffering = false;
@@ -130,7 +118,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
     final uri = Uri.tryParse(url);
     if (uri == null || !uri.hasScheme) {
-      _log('ERROR: Invalid URL format: $url');
       setState(() {
         _hasError = true;
         _isBuffering = false;
@@ -138,8 +125,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       });
       return;
     }
-
-    _log('Opening media: scheme=${uri.scheme}, host=${uri.host}');
 
     setState(() {
       _isBuffering = true;
@@ -151,10 +136,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       await _player.open(
         Media(url, httpHeaders: {'User-Agent': 'Zentrix/1.0'}),
       );
-      _log('Media opened successfully');
-    } catch (e, stack) {
-      _log('ERROR opening media: $e');
-      _log('Stack: ${stack.toString().split('\n').take(3).join(' | ')}');
+    } catch (e) {
+      dev.log('[Zentrix Player] ERROR opening media: $e');
       if (!mounted) return;
       setState(() {
         _hasError = true;
@@ -166,22 +149,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   }
 
   Future<void> _attemptReconnect() async {
-    if (_reconnectAttempts >= _maxReconnectAttempts) {
-      _log('Max reconnect attempts reached ($_maxReconnectAttempts)');
-      return;
-    }
+    if (_reconnectAttempts >= _maxReconnectAttempts) return;
     _reconnectAttempts++;
     final delaySec = _reconnectAttempts * 2;
-    _log('Reconnecting in ${delaySec}s (attempt $_reconnectAttempts/$_maxReconnectAttempts)...');
     setState(() {
       _isBuffering = true;
       _hasError = false;
     });
-
     await Future.delayed(Duration(seconds: delaySec));
-    if (mounted) {
-      _initPlayer();
-    }
+    if (mounted) _initPlayer();
   }
 
   void _startHideTimer() {
@@ -198,7 +174,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
   void _toggleFullscreen() {
     setState(() => _isFullscreen = !_isFullscreen);
-
     if (_isFullscreen) {
       SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
       SystemChrome.setPreferredOrientations([
@@ -207,15 +182,38 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       ]);
     } else {
       SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
-      SystemChrome.setPreferredOrientations([
-        DeviceOrientation.portraitUp,
-      ]);
+      SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
     }
+  }
+
+  void _setVolume(double v) {
+    final clamped = v.clamp(0.0, 1.0);
+    _player.setVolume(clamped * 100);
+    setState(() => _volume = clamped);
+    _resetSliderTimer();
+  }
+
+  void _setBrightness(double b) {
+    setState(() => _brightness = b.clamp(0.0, 1.0));
+    _resetSliderTimer();
+  }
+
+  void _resetSliderTimer() {
+    _sliderHideTimer?.cancel();
+    _sliderHideTimer = Timer(const Duration(seconds: 3), () {
+      if (mounted) {
+        setState(() {
+          _showVolumeSlider = false;
+          _showBrightnessSlider = false;
+        });
+      }
+    });
   }
 
   @override
   void dispose() {
     _hideTimer?.cancel();
+    _sliderHideTimer?.cancel();
     _playingSub?.cancel();
     _bufferingSub?.cancel();
     _errorSub?.cancel();
@@ -230,6 +228,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   @override
   Widget build(BuildContext context) {
     final l = AppLocalizations.of(context);
+    final screenH = MediaQuery.of(context).size.height;
+    final topPad = MediaQuery.of(context).padding.top;
 
     return Scaffold(
       backgroundColor: Colors.black,
@@ -239,6 +239,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         child: Stack(
           fit: StackFit.expand,
           children: [
+            // Video
             Center(
               child: Video(
                 controller: _videoController,
@@ -246,6 +247,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
               ),
             ),
 
+            // Buffering indicator
             if (_isBuffering && !_hasError)
               Center(
                 child: Column(
@@ -260,13 +262,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                       _reconnectAttempts > 0
                           ? l.reconnecting(_reconnectAttempts, _maxReconnectAttempts)
                           : l.loadingStream,
-                      style:
-                          const TextStyle(color: Colors.white70, fontSize: 13),
+                      style: const TextStyle(color: Colors.white70, fontSize: 13),
                     ),
                   ],
                 ),
               ),
 
+            // Error state
             if (_hasError && _reconnectAttempts >= _maxReconnectAttempts)
               Center(
                 child: Padding(
@@ -274,8 +276,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Icon(Icons.error_outline,
-                          color: AppColors.error, size: 48),
+                      const Icon(Icons.error_outline, color: AppColors.error, size: 48),
                       const SizedBox(height: 12),
                       Text(
                         l.streamUnavailable,
@@ -303,186 +304,304 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                           ),
                         ),
                       ],
-                      const SizedBox(height: 6),
-                      Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.05),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: SelectableText(
-                          'URL: ${widget.streamUrl}',
-                          style: const TextStyle(
-                            color: Colors.white38,
-                            fontSize: 11,
-                            fontFamily: 'monospace',
-                          ),
-                        ),
-                      ),
                       const SizedBox(height: 16),
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          TextButton.icon(
-                            onPressed: () {
-                              setState(() {
-                                _reconnectAttempts = 0;
-                                _hasError = false;
-                                _errorMessage = null;
-                                _isBuffering = true;
-                              });
-                              _initPlayer();
-                            },
-                            icon: const Icon(Icons.refresh,
-                                color: AppColors.primary),
-                            label: Text(l.retry,
-                                style: const TextStyle(color: AppColors.primary)),
-                          ),
-                          const SizedBox(width: 8),
-                          TextButton.icon(
-                            onPressed: () =>
-                                setState(() => _showDebug = !_showDebug),
-                            icon: const Icon(Icons.bug_report,
-                                color: Colors.amber),
-                            label: Text(l.debugLog,
-                                style: const TextStyle(color: Colors.amber)),
-                          ),
-                        ],
+                      TextButton.icon(
+                        onPressed: () {
+                          setState(() {
+                            _reconnectAttempts = 0;
+                            _hasError = false;
+                            _errorMessage = null;
+                            _isBuffering = true;
+                          });
+                          _initPlayer();
+                        },
+                        icon: const Icon(Icons.refresh, color: AppColors.primary),
+                        label: Text(l.retry,
+                            style: const TextStyle(color: AppColors.primary)),
                       ),
                     ],
                   ),
                 ),
               ),
 
-            if (_showDebug)
+            // Controls overlay
+            if (_showControls)
+              _buildControlsOverlay(context, l, topPad),
+
+            // Brightness slider — left side
+            if (_showBrightnessSlider)
               Positioned(
-                bottom: 0,
-                left: 0,
-                right: 0,
-                child: Container(
-                  height: MediaQuery.of(context).size.height * 0.5,
-                  color: Colors.black.withValues(alpha: 0.92),
-                  child: Column(
-                    children: [
-                      Padding(
-                        padding: const EdgeInsets.all(8),
-                        child: Row(
+                left: 24,
+                top: screenH * 0.2,
+                bottom: screenH * 0.2,
+                child: _VerticalSlider(
+                  value: _brightness,
+                  icon: _brightness > 0.5
+                      ? Icons.brightness_high_rounded
+                      : Icons.brightness_low_rounded,
+                  activeColor: Colors.amber,
+                  onChanged: _setBrightness,
+                ),
+              ),
+
+            // Volume slider — right side
+            if (_showVolumeSlider)
+              Positioned(
+                right: 24,
+                top: screenH * 0.2,
+                bottom: screenH * 0.2,
+                child: _VerticalSlider(
+                  value: _volume,
+                  icon: _volume == 0
+                      ? Icons.volume_off_rounded
+                      : _volume < 0.5
+                          ? Icons.volume_down_rounded
+                          : Icons.volume_up_rounded,
+                  activeColor: AppColors.primary,
+                  onChanged: _setVolume,
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildControlsOverlay(BuildContext context, AppLocalizations l, double topPad) {
+    return Container(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            Colors.black.withValues(alpha: 0.7),
+            Colors.transparent,
+            Colors.transparent,
+            Colors.black.withValues(alpha: 0.7),
+          ],
+          stops: const [0.0, 0.25, 0.75, 1.0],
+        ),
+      ),
+      child: SafeArea(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            // Top bar: back + channel info
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: Row(
+                children: [
+                  IconButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    icon: const Icon(Icons.arrow_back_ios_new_rounded),
+                    color: Colors.white,
+                    iconSize: 22,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
                           children: [
-                            const Icon(Icons.bug_report,
-                                color: Colors.amber, size: 16),
-                            const SizedBox(width: 8),
-                            Text(l.debugLog,
-                                style: const TextStyle(
-                                    color: Colors.amber,
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 13)),
-                            const Spacer(),
-                            GestureDetector(
-                              onTap: () =>
-                                  setState(() => _showDebug = false),
-                              child: const Icon(Icons.close,
-                                  color: Colors.white54, size: 20),
+                            Container(
+                              width: 8,
+                              height: 8,
+                              decoration: const BoxDecoration(
+                                color: AppColors.live,
+                                shape: BoxShape.circle,
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                            Text(
+                              l.live,
+                              style: const TextStyle(
+                                color: AppColors.live,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w800,
+                              ),
                             ),
                           ],
                         ),
-                      ),
-                      const Divider(color: Colors.white24, height: 1),
-                      Expanded(
-                        child: ListView.builder(
-                          padding: const EdgeInsets.all(8),
-                          reverse: true,
-                          itemCount: _debugLog.length,
-                          itemBuilder: (context, index) {
-                            final entry =
-                                _debugLog[_debugLog.length - 1 - index];
-                            final isError = entry.contains('ERROR');
-                            return Padding(
-                              padding:
-                                  const EdgeInsets.symmetric(vertical: 1),
-                              child: Text(
-                                entry,
-                                style: TextStyle(
-                                  color: isError
-                                      ? Colors.redAccent
-                                      : Colors.greenAccent
-                                          .withValues(alpha: 0.8),
-                                  fontSize: 11,
-                                  fontFamily: 'monospace',
-                                ),
-                              ),
-                            );
-                          },
+                        const SizedBox(height: 2),
+                        Text(
+                          widget.channelName,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 18,
+                            fontWeight: FontWeight.w700,
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
-                ),
-              ),
-
-            if (_showControls && !_showDebug)
-              PlayerControls(
-                channelName: widget.channelName,
-                isPlaying: _isPlaying,
-                isFullscreen: _isFullscreen,
-                position: Duration.zero,
-                duration: Duration.zero,
-                onPlayPause: () {
-                  _player.playOrPause();
-                  _startHideTimer();
-                },
-                onFullscreen: _toggleFullscreen,
-                onBack: () => Navigator.of(context).pop(),
-              ),
-
-            Positioned(
-              top: MediaQuery.of(context).padding.top + 8,
-              left: 8,
-              child: IconButton(
-                onPressed: () => Navigator.of(context).pop(),
-                icon: const Icon(Icons.arrow_back_ios_new_rounded,
-                    color: Colors.white70, size: 20),
+                ],
               ),
             ),
 
-            Positioned(
-              top: MediaQuery.of(context).padding.top + 8,
-              right: 8,
-              child: GestureDetector(
-                onTap: () => setState(() => _showDebug = !_showDebug),
-                child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: Colors.black54,
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(
-                      color: _showDebug ? Colors.amber : Colors.white24,
-                    ),
+            const Spacer(),
+
+            // Bottom bar: brightness, fullscreen, volume
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  _ControlButton(
+                    icon: Icons.brightness_6_rounded,
+                    onTap: () {
+                      setState(() {
+                        _showBrightnessSlider = !_showBrightnessSlider;
+                        _showVolumeSlider = false;
+                      });
+                      if (_showBrightnessSlider) _resetSliderTimer();
+                    },
+                    isActive: _showBrightnessSlider,
                   ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.bug_report,
-                          size: 14,
-                          color:
-                              _showDebug ? Colors.amber : Colors.white54),
-                      const SizedBox(width: 4),
-                      Text(
-                        'LOG',
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w700,
-                          color:
-                              _showDebug ? Colors.amber : Colors.white54,
-                        ),
-                      ),
-                    ],
+                  _ControlButton(
+                    icon: _isFullscreen
+                        ? Icons.fullscreen_exit_rounded
+                        : Icons.fullscreen_rounded,
+                    onTap: _toggleFullscreen,
                   ),
-                ),
+                  _ControlButton(
+                    icon: _volume == 0
+                        ? Icons.volume_off_rounded
+                        : Icons.volume_up_rounded,
+                    onTap: () {
+                      setState(() {
+                        _showVolumeSlider = !_showVolumeSlider;
+                        _showBrightnessSlider = false;
+                      });
+                      if (_showVolumeSlider) _resetSliderTimer();
+                    },
+                    isActive: _showVolumeSlider,
+                  ),
+                ],
               ),
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _ControlButton extends StatelessWidget {
+  final IconData icon;
+  final VoidCallback onTap;
+  final bool isActive;
+
+  const _ControlButton({
+    required this.icon,
+    required this.onTap,
+    this.isActive = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 48,
+        height: 48,
+        decoration: BoxDecoration(
+          color: isActive
+              ? AppColors.primary.withValues(alpha: 0.3)
+              : Colors.white.withValues(alpha: 0.1),
+          borderRadius: BorderRadius.circular(14),
+          border: isActive
+              ? Border.all(color: AppColors.primary.withValues(alpha: 0.6))
+              : null,
+        ),
+        child: Icon(icon, color: Colors.white, size: 24),
+      ),
+    );
+  }
+}
+
+class _VerticalSlider extends StatelessWidget {
+  final double value;
+  final IconData icon;
+  final Color activeColor;
+  final ValueChanged<double> onChanged;
+
+  const _VerticalSlider({
+    required this.value,
+    required this.icon,
+    required this.activeColor,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 44,
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.7),
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+      ),
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      child: Column(
+        children: [
+          Icon(icon, color: activeColor, size: 20),
+          const SizedBox(height: 8),
+          Text(
+            '${(value * 100).round()}',
+            style: TextStyle(
+              color: activeColor,
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Expanded(
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final trackHeight = constraints.maxHeight;
+                return GestureDetector(
+                  onVerticalDragUpdate: (details) {
+                    final newVal = value - (details.delta.dy / trackHeight);
+                    onChanged(newVal.clamp(0.0, 1.0));
+                  },
+                  onTapDown: (details) {
+                    final tapVal = 1.0 - (details.localPosition.dy / trackHeight);
+                    onChanged(tapVal.clamp(0.0, 1.0));
+                  },
+                  child: Container(
+                    width: 44,
+                    color: Colors.transparent,
+                    child: Center(
+                      child: Container(
+                        width: 4,
+                        height: trackHeight,
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                        child: Align(
+                          alignment: Alignment.bottomCenter,
+                          child: FractionallySizedBox(
+                            heightFactor: value,
+                            child: Container(
+                              decoration: BoxDecoration(
+                                color: activeColor,
+                                borderRadius: BorderRadius.circular(2),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
       ),
     );
   }

@@ -9,6 +9,7 @@ class ChannelModel extends HiveObject {
   String category;
   String tvgId;
   bool isLive;
+  int contentTypeIndex; // 0=live, 1=movie, 2=series
 
   ChannelModel({
     required this.id,
@@ -18,7 +19,10 @@ class ChannelModel extends HiveObject {
     this.category = 'Uncategorized',
     this.tvgId = '',
     this.isLive = true,
+    this.contentTypeIndex = 0,
   });
+
+  ContentType get contentType => ContentType.values[contentTypeIndex.clamp(0, 2)];
 
   Channel toEntity({bool isFavorite = false}) {
     return Channel(
@@ -30,6 +34,7 @@ class ChannelModel extends HiveObject {
       tvgId: tvgId,
       isLive: isLive,
       isFavorite: isFavorite,
+      contentType: contentType,
     );
   }
 
@@ -42,18 +47,23 @@ class ChannelModel extends HiveObject {
       category: channel.category,
       tvgId: channel.tvgId,
       isLive: channel.isLive,
+      contentTypeIndex: channel.contentType.index,
     );
   }
 
-  factory ChannelModel.fromXtreamJson(Map<String, dynamic> json) {
+  factory ChannelModel.fromXtreamJson(
+    Map<String, dynamic> json, {
+    ContentType type = ContentType.live,
+  }) {
     return ChannelModel(
-      id: json['stream_id']?.toString() ?? '',
+      id: json['stream_id']?.toString() ?? json['series_id']?.toString() ?? '',
       name: json['name']?.toString() ?? 'Unknown',
-      logoUrl: json['stream_icon']?.toString() ?? '',
+      logoUrl: json['stream_icon']?.toString() ?? json['cover']?.toString() ?? '',
       streamUrl: '',
       category: json['category_id']?.toString() ?? 'Uncategorized',
       tvgId: json['epg_channel_id']?.toString() ?? '',
-      isLive: true,
+      isLive: type == ContentType.live,
+      contentTypeIndex: type.index,
     );
   }
 
@@ -65,6 +75,7 @@ class ChannelModel extends HiveObject {
     'category': category,
     'tvgId': tvgId,
     'isLive': isLive,
+    'contentTypeIndex': contentTypeIndex,
   };
 }
 
@@ -87,12 +98,13 @@ class ChannelModelAdapter extends TypeAdapter<ChannelModel> {
       category: fields[4] as String? ?? 'Uncategorized',
       tvgId: fields[5] as String? ?? '',
       isLive: fields[6] as bool? ?? true,
+      contentTypeIndex: fields[7] as int? ?? 0,
     );
   }
 
   @override
   void write(BinaryWriter writer, ChannelModel obj) {
-    writer.writeByte(7);
+    writer.writeByte(8);
     writer.writeByte(0); writer.write(obj.id);
     writer.writeByte(1); writer.write(obj.name);
     writer.writeByte(2); writer.write(obj.logoUrl);
@@ -100,5 +112,6 @@ class ChannelModelAdapter extends TypeAdapter<ChannelModel> {
     writer.writeByte(4); writer.write(obj.category);
     writer.writeByte(5); writer.write(obj.tvgId);
     writer.writeByte(6); writer.write(obj.isLive);
+    writer.writeByte(7); writer.write(obj.contentTypeIndex);
   }
 }

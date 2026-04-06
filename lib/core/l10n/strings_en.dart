@@ -87,4 +87,14 @@ const Map<String, String> stringsEn = {
 
   // Categories
   'categories': 'Categories',
+
+  // Content Types
+  'movies': 'Movies',
+  'series': 'Series',
+  'allMovies': 'All Movies',
+  'allSeries': 'All Series',
+  'noMoviesLoaded': 'No movies found',
+  'noSeriesLoaded': 'No series found',
+  'moviesWillAppear': 'Movies from your playlist will appear here',
+  'seriesWillAppear': 'Series from your playlist will appear here',
 };

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:iptv_app/domain/entities/channel.dart';
-import 'package:iptv_app/presentation/widgets/channel_tile.dart';
+import 'package:zentrix/domain/entities/channel.dart';
+import 'package:zentrix/presentation/widgets/channel_tile.dart';
 
 void main() {
   group('ChannelTile', () {

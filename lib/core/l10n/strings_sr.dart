@@ -87,4 +87,14 @@ const Map<String, String> stringsSr = {
 
   // Categories
   'categories': 'Kategorije',
+
+  // Content Types
+  'movies': 'Filmovi',
+  'series': 'Serije',
+  'allMovies': 'Svi filmovi',
+  'allSeries': 'Sve serije',
+  'noMoviesLoaded': 'Nema pronađenih filmova',
+  'noSeriesLoaded': 'Nema pronađenih serija',
+  'moviesWillAppear': 'Filmovi iz vaše plejliste će se pojaviti ovde',
+  'seriesWillAppear': 'Serije iz vaše plejliste će se pojaviti ovde',
 };

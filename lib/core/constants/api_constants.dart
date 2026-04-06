@@ -18,6 +18,22 @@ class ApiConstants {
   ) =>
       '${xtreamBaseUrl(server)}/live/$username/$password/$streamId.m3u8';
 
+  static String xtreamVodStreamUrl(
+    String server,
+    String username,
+    String password,
+    String streamId,
+  ) =>
+      '${xtreamBaseUrl(server)}/movie/$username/$password/$streamId.m3u8';
+
+  static String xtreamSeriesStreamUrl(
+    String server,
+    String username,
+    String password,
+    String streamId,
+  ) =>
+      '${xtreamBaseUrl(server)}/series/$username/$password/$streamId.m3u8';
+
   static String xtreamEpgUrl(
     String server,
     String username,
@@ -27,6 +43,10 @@ class ApiConstants {
 
   static const String actionGetLiveStreams = 'get_live_streams';
   static const String actionGetLiveCategories = 'get_live_categories';
+  static const String actionGetVodStreams = 'get_vod_streams';
+  static const String actionGetVodCategories = 'get_vod_categories';
+  static const String actionGetSeries = 'get_series';
+  static const String actionGetSeriesCategories = 'get_series_categories';
   static const String actionGetShortEpg = 'get_short_epg';
   static const String actionGetSimpleDataTable = 'get_simple_datatable';
 }

@@ -1,3 +1,5 @@
+enum ContentType { live, movie, series }
+
 class Channel {
   final String id;
   final String name;
@@ -7,6 +9,7 @@ class Channel {
   final String tvgId;
   final bool isLive;
   final bool isFavorite;
+  final ContentType contentType;
 
   const Channel({
     required this.id,
@@ -17,6 +20,7 @@ class Channel {
     this.tvgId = '',
     this.isLive = true,
     this.isFavorite = false,
+    this.contentType = ContentType.live,
   });
 
   Channel copyWith({
@@ -28,6 +32,7 @@ class Channel {
     String? tvgId,
     bool? isLive,
     bool? isFavorite,
+    ContentType? contentType,
   }) {
     return Channel(
       id: id ?? this.id,
@@ -38,6 +43,7 @@ class Channel {
       tvgId: tvgId ?? this.tvgId,
       isLive: isLive ?? this.isLive,
       isFavorite: isFavorite ?? this.isFavorite,
+      contentType: contentType ?? this.contentType,
     );
   }
 
@@ -49,5 +55,5 @@ class Channel {
   int get hashCode => id.hashCode;
 
   @override
-  String toString() => 'Channel(id: $id, name: $name, category: $category)';
+  String toString() => 'Channel(id: $id, name: $name, category: $category, type: $contentType)';
 }

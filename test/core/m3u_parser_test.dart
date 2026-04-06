@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:iptv_app/core/utils/m3u_parser.dart';
+import 'package:zentrix/core/utils/m3u_parser.dart';
 
 void main() {
   group('M3uParser', () {

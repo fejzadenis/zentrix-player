@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/l10n/app_localizations.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../domain/entities/channel.dart';
 import '../../providers/channel_provider.dart';
 import '../../providers/favorites_provider.dart';
 import '../../providers/epg_provider.dart';
@@ -10,11 +11,39 @@ import '../../widgets/channel_tile.dart';
 import '../../widgets/category_sidebar.dart';
 import '../../widgets/shimmer_loading.dart';
 
-class HomeScreen extends ConsumerWidget {
+class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends ConsumerState<HomeScreen>
+    with SingleTickerProviderStateMixin {
+  late TabController _tabController;
+
+  @override
+  void initState() {
+    super.initState();
+    _tabController = TabController(length: 3, vsync: this);
+    _tabController.addListener(_onTabChanged);
+  }
+
+  void _onTabChanged() {
+    if (_tabController.indexIsChanging) return;
+    final type = ContentType.values[_tabController.index];
+    ref.read(channelProvider.notifier).selectContentType(type);
+  }
+
+  @override
+  void dispose() {
+    _tabController.removeListener(_onTabChanged);
+    _tabController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final channelState = ref.watch(channelProvider);
     final isWide = MediaQuery.of(context).size.width > 600;
     final l = AppLocalizations.of(context);
@@ -32,6 +61,12 @@ class HomeScreen extends ConsumerWidget {
             onPressed: () => context.go('/playlist-input'),
           ),
         ],
+        bottom: channelState.channels.isEmpty
+            ? null
+            : PreferredSize(
+                preferredSize: const Size.fromHeight(46),
+                child: _buildContentTypeTabs(channelState, l),
+              ),
       ),
       body: channelState.isLoading
           ? const ShimmerChannelList()
@@ -39,7 +74,73 @@ class HomeScreen extends ConsumerWidget {
               ? _buildEmptyState(context, l)
               : isWide
                   ? _buildWideLayout(context, ref, channelState)
-                  : _buildNarrowLayout(context, ref, channelState),
+                  : _buildNarrowLayout(context, ref, channelState, l),
+    );
+  }
+
+  Widget _buildContentTypeTabs(ChannelState state, AppLocalizations l) {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      decoration: BoxDecoration(
+        color: Theme.of(context).cardTheme.color,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: TabBar(
+        controller: _tabController,
+        indicator: BoxDecoration(
+          borderRadius: BorderRadius.circular(12),
+          gradient: AppColors.primaryGradient,
+        ),
+        indicatorSize: TabBarIndicatorSize.tab,
+        dividerColor: Colors.transparent,
+        labelColor: Colors.white,
+        unselectedLabelColor: AppColors.textSecondary,
+        labelStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+        tabs: [
+          Tab(
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.live_tv_rounded, size: 16),
+                const SizedBox(width: 6),
+                Text(l.liveTV),
+                if (state.liveCount > 0) ...[
+                  const SizedBox(width: 4),
+                  _CountBadge(count: state.liveCount),
+                ],
+              ],
+            ),
+          ),
+          Tab(
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.movie_rounded, size: 16),
+                const SizedBox(width: 6),
+                Text(l.movies),
+                if (state.movieCount > 0) ...[
+                  const SizedBox(width: 4),
+                  _CountBadge(count: state.movieCount),
+                ],
+              ],
+            ),
+          ),
+          Tab(
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.tv_rounded, size: 16),
+                const SizedBox(width: 6),
+                Text(l.series),
+                if (state.seriesCount > 0) ...[
+                  const SizedBox(width: 4),
+                  _CountBadge(count: state.seriesCount),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -48,6 +149,10 @@ class HomeScreen extends ConsumerWidget {
     WidgetRef ref,
     ChannelState state,
   ) {
+    if (state.filteredChannels.isEmpty) {
+      return _buildContentEmptyState(context, state.selectedContentType);
+    }
+
     return Row(
       children: [
         SizedBox(
@@ -70,7 +175,12 @@ class HomeScreen extends ConsumerWidget {
     BuildContext context,
     WidgetRef ref,
     ChannelState state,
+    AppLocalizations l,
   ) {
+    if (state.filteredChannels.isEmpty) {
+      return _buildContentEmptyState(context, state.selectedContentType);
+    }
+
     return Column(
       children: [
         if (state.categories.length > 1)
@@ -145,6 +255,53 @@ class HomeScreen extends ConsumerWidget {
     );
   }
 
+  Widget _buildContentEmptyState(BuildContext context, ContentType type) {
+    final l = AppLocalizations.of(context);
+
+    final IconData icon;
+    final String title;
+    final String subtitle;
+
+    switch (type) {
+      case ContentType.live:
+        icon = Icons.live_tv_rounded;
+        title = l.noChannelsLoaded;
+        subtitle = l.addPlaylistToStart;
+      case ContentType.movie:
+        icon = Icons.movie_rounded;
+        title = l.noMoviesLoaded;
+        subtitle = l.moviesWillAppear;
+      case ContentType.series:
+        icon = Icons.tv_rounded;
+        title = l.noSeriesLoaded;
+        subtitle = l.seriesWillAppear;
+    }
+
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 80, color: AppColors.textSecondary.withValues(alpha: 0.5)),
+          const SizedBox(height: 16),
+          Text(
+            title,
+            style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                  color: AppColors.textSecondary,
+                ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            subtitle,
+            textAlign: TextAlign.center,
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: AppColors.textSecondary,
+                ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildEmptyState(BuildContext context, AppLocalizations l) {
     return Center(
       child: Column(
@@ -184,6 +341,31 @@ class HomeScreen extends ConsumerWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _CountBadge extends StatelessWidget {
+  final int count;
+  const _CountBadge({required this.count});
+
+  String get _label {
+    if (count >= 1000) return '${(count / 1000).toStringAsFixed(1)}k';
+    return '$count';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.2),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Text(
+        _label,
+        style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w600),
       ),
     );
   }

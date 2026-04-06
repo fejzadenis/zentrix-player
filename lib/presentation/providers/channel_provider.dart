@@ -14,6 +14,7 @@ class ChannelState {
   final List<Channel> filteredChannels;
   final List<Category> categories;
   final String selectedCategory;
+  final ContentType selectedContentType;
   final bool isLoading;
   final String? error;
 
@@ -22,15 +23,30 @@ class ChannelState {
     this.filteredChannels = const [],
     this.categories = const [],
     this.selectedCategory = 'all',
+    this.selectedContentType = ContentType.live,
     this.isLoading = false,
     this.error,
   });
+
+  List<Channel> get liveChannels =>
+      channels.where((c) => c.contentType == ContentType.live).toList();
+
+  List<Channel> get movieChannels =>
+      channels.where((c) => c.contentType == ContentType.movie).toList();
+
+  List<Channel> get seriesChannels =>
+      channels.where((c) => c.contentType == ContentType.series).toList();
+
+  int get liveCount => channels.where((c) => c.contentType == ContentType.live).length;
+  int get movieCount => channels.where((c) => c.contentType == ContentType.movie).length;
+  int get seriesCount => channels.where((c) => c.contentType == ContentType.series).length;
 
   ChannelState copyWith({
     List<Channel>? channels,
     List<Channel>? filteredChannels,
     List<Category>? categories,
     String? selectedCategory,
+    ContentType? selectedContentType,
     bool? isLoading,
     String? error,
   }) {
@@ -39,6 +55,7 @@ class ChannelState {
       filteredChannels: filteredChannels ?? this.filteredChannels,
       categories: categories ?? this.categories,
       selectedCategory: selectedCategory ?? this.selectedCategory,
+      selectedContentType: selectedContentType ?? this.selectedContentType,
       isLoading: isLoading ?? this.isLoading,
       error: error,
     );
@@ -58,15 +75,7 @@ class ChannelNotifier extends StateNotifier<ChannelState> {
     }
     await _repository.cacheChannels(channels);
 
-    final categories = await _repository.getCategories();
-
-    state = state.copyWith(
-      channels: channels,
-      filteredChannels: channels,
-      categories: categories,
-      selectedCategory: 'all',
-      isLoading: false,
-    );
+    _applyContentTypeFilter(channels, ContentType.live);
   }
 
   Future<void> loadCachedChannels() async {
@@ -81,23 +90,65 @@ class ChannelNotifier extends StateNotifier<ChannelState> {
       if (_repository is ChannelRepositoryImpl) {
         (_repository as ChannelRepositoryImpl).setChannels(channels);
       }
-      final categories = await _repository.getCategories();
 
-      state = state.copyWith(
-        channels: channels,
-        filteredChannels: channels,
-        categories: categories,
-        isLoading: false,
-      );
+      _applyContentTypeFilter(channels, ContentType.live);
     } catch (e) {
       state = state.copyWith(isLoading: false, error: e.toString());
     }
   }
 
+  void selectContentType(ContentType type) {
+    _applyContentTypeFilter(state.channels, type);
+  }
+
+  void _applyContentTypeFilter(List<Channel> allChannels, ContentType type) {
+    final typeChannels = allChannels.where((c) => c.contentType == type).toList();
+
+    final categoryMap = <String, int>{};
+    for (final ch in typeChannels) {
+      categoryMap[ch.category] = (categoryMap[ch.category] ?? 0) + 1;
+    }
+
+    final categories = categoryMap.entries
+        .map((e) => Category(id: e.key, name: e.key, channelCount: e.value))
+        .toList()
+      ..sort((a, b) => a.name.compareTo(b.name));
+
+    final allLabel = type == ContentType.live
+        ? 'All Channels'
+        : type == ContentType.movie
+            ? 'All Movies'
+            : 'All Series';
+
+    categories.insert(
+      0,
+      Category(id: 'all', name: allLabel, channelCount: typeChannels.length),
+    );
+
+    state = state.copyWith(
+      channels: allChannels,
+      filteredChannels: typeChannels,
+      categories: categories,
+      selectedCategory: 'all',
+      selectedContentType: type,
+      isLoading: false,
+    );
+  }
+
   Future<void> selectCategory(String categoryId) async {
-    state = state.copyWith(isLoading: true, selectedCategory: categoryId);
-    final filtered = await _repository.getChannelsByCategory(categoryId);
-    state = state.copyWith(filteredChannels: filtered, isLoading: false);
+    state = state.copyWith(selectedCategory: categoryId);
+
+    final typeChannels = state.channels
+        .where((c) => c.contentType == state.selectedContentType)
+        .toList();
+
+    if (categoryId == 'all') {
+      state = state.copyWith(filteredChannels: typeChannels);
+    } else {
+      state = state.copyWith(
+        filteredChannels: typeChannels.where((ch) => ch.category == categoryId).toList(),
+      );
+    }
   }
 
   void updateChannelFavorite(String channelId, bool isFavorite) {

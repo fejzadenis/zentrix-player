@@ -119,6 +119,16 @@ class AppLocalizations {
 
   // --- Categories ---
   String get categories => get('categories');
+
+  // --- Content Types ---
+  String get movies => get('movies');
+  String get series => get('series');
+  String get allMovies => get('allMovies');
+  String get allSeries => get('allSeries');
+  String get noMoviesLoaded => get('noMoviesLoaded');
+  String get noSeriesLoaded => get('noSeriesLoaded');
+  String get moviesWillAppear => get('moviesWillAppear');
+  String get seriesWillAppear => get('seriesWillAppear');
 }
 
 class _AppLocalizationsDelegate
