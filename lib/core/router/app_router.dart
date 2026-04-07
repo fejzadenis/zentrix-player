@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import '../../domain/entities/channel.dart';
 import '../../presentation/screens/splash/splash_screen.dart';
 import '../../presentation/screens/playlist_input/playlist_input_screen.dart';
 import '../../presentation/screens/home/home_screen.dart';
@@ -10,6 +11,38 @@ import '../../presentation/screens/search/search_screen.dart';
 import '../../presentation/screens/favorites/favorites_screen.dart';
 import '../../presentation/screens/settings/settings_screen.dart';
 import '../../presentation/screens/home/shell_screen.dart';
+import '../../presentation/screens/series/series_detail_screen.dart';
+
+CustomTransitionPage<void> _fadeTransition(Widget child, GoRouterState state) {
+  return CustomTransitionPage(
+    key: state.pageKey,
+    child: child,
+    transitionDuration: const Duration(milliseconds: 250),
+    reverseTransitionDuration: const Duration(milliseconds: 200),
+    transitionsBuilder: (context, animation, secondaryAnimation, child) {
+      return FadeTransition(opacity: animation, child: child);
+    },
+  );
+}
+
+CustomTransitionPage<void> _slideUpTransition(Widget child, GoRouterState state) {
+  return CustomTransitionPage(
+    key: state.pageKey,
+    child: child,
+    transitionDuration: const Duration(milliseconds: 300),
+    reverseTransitionDuration: const Duration(milliseconds: 250),
+    transitionsBuilder: (context, animation, secondaryAnimation, child) {
+      final curved = CurvedAnimation(parent: animation, curve: Curves.easeOutCubic);
+      return SlideTransition(
+        position: Tween<Offset>(
+          begin: const Offset(0, 0.08),
+          end: Offset.zero,
+        ).animate(curved),
+        child: FadeTransition(opacity: curved, child: child),
+      );
+    },
+  );
+}
 
 final routerProvider = Provider<GoRouter>((ref) {
   return GoRouter(
@@ -17,11 +50,11 @@ final routerProvider = Provider<GoRouter>((ref) {
     routes: [
       GoRoute(
         path: '/',
-        builder: (context, state) => const SplashScreen(),
+        pageBuilder: (context, state) => _fadeTransition(const SplashScreen(), state),
       ),
       GoRoute(
         path: '/playlist-input',
-        builder: (context, state) => const PlaylistInputScreen(),
+        pageBuilder: (context, state) => _slideUpTransition(const PlaylistInputScreen(), state),
       ),
       ShellRoute(
         builder: (context, state, child) => ShellScreen(child: child),
@@ -50,18 +83,46 @@ final routerProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: '/player',
-        builder: (context, state) {
+        pageBuilder: (context, state) {
           final extra = state.extra as Map<String, dynamic>;
-          return PlayerScreen(
-            streamUrl: extra['streamUrl'] as String,
-            channelName: extra['channelName'] as String,
-            channelId: extra['channelId'] as String? ?? '',
+          return CustomTransitionPage(
+            key: state.pageKey,
+            child: PlayerScreen(
+              streamUrl: extra['streamUrl'] as String,
+              channelName: extra['channelName'] as String,
+              channelId: extra['channelId'] as String? ?? '',
+            ),
+            transitionDuration: const Duration(milliseconds: 350),
+            reverseTransitionDuration: const Duration(milliseconds: 250),
+            transitionsBuilder: (context, animation, secondaryAnimation, child) {
+              final curved = CurvedAnimation(parent: animation, curve: Curves.easeOutCubic);
+              return FadeTransition(
+                opacity: curved,
+                child: ScaleTransition(
+                  scale: Tween<double>(begin: 0.95, end: 1.0).animate(curved),
+                  child: child,
+                ),
+              );
+            },
           );
         },
       ),
       GoRoute(
         path: '/search',
-        builder: (context, state) => const SearchScreen(),
+        pageBuilder: (context, state) => _slideUpTransition(const SearchScreen(), state),
+      ),
+      GoRoute(
+        path: '/series-detail',
+        pageBuilder: (context, state) {
+          final extra = state.extra as Map<String, dynamic>;
+          return _slideUpTransition(
+            SeriesDetailScreen(
+              seriesName: extra['seriesName'] as String,
+              episodes: extra['episodes'] as List<Channel>,
+            ),
+            state,
+          );
+        },
       ),
     ],
   );

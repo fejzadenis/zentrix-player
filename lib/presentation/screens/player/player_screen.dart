@@ -5,10 +5,18 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
+import 'package:simple_pip_mode/simple_pip.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
+import 'package:go_router/go_router.dart';
 import '../../../core/l10n/app_localizations.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../domain/entities/channel.dart';
+import '../../providers/channel_provider.dart';
 import '../../providers/player_provider.dart';
+import '../../providers/settings_provider.dart';
+
+enum AspectMode { fit, fill, stretch }
 
 class PlayerScreen extends ConsumerStatefulWidget {
   final String streamUrl;
@@ -38,17 +46,30 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   String? _errorMessage;
   static const int _maxReconnectAttempts = 3;
 
-  // Volume & brightness
   double _volume = 1.0;
   double _brightness = 0.5;
   bool _showVolumeSlider = false;
   bool _showBrightnessSlider = false;
   Timer? _sliderHideTimer;
 
+  AspectMode _aspectMode = AspectMode.fit;
+  double _playbackSpeed = 1.0;
+
+  Channel? _nextEpisode;
+  bool _showNextEpisode = false;
+  Timer? _autoPlayTimer;
+  int _autoPlayCountdown = 10;
+
+  final SimplePip _simplePip = SimplePip();
+  bool _isPipAvailable = false;
+
   StreamSubscription? _playingSub;
   StreamSubscription? _bufferingSub;
   StreamSubscription? _errorSub;
   StreamSubscription? _completedSub;
+  StreamSubscription? _tracksSub;
+
+  Tracks _tracks = const Tracks();
 
   @override
   void initState() {
@@ -60,9 +81,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     _videoController = VideoController(_player);
 
     _setupListeners();
+    _checkPipAvailability();
 
     Future.microtask(() {
       if (!mounted) return;
+      final storage = ref.read(localStorageProvider);
+      storage.recordWatch(widget.channelId);
       ref.read(playerProvider.notifier).setChannel(
             widget.channelId,
             widget.channelName,
@@ -96,12 +120,17 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
     _completedSub = _player.stream.completed.listen((completed) {
       if (!mounted || !completed) return;
-      _attemptReconnect();
+      _checkAutoPlayNext();
     });
 
     _player.stream.volume.listen((vol) {
       if (!mounted) return;
       setState(() => _volume = vol / 100.0);
+    });
+
+    _tracksSub = _player.stream.tracks.listen((tracks) {
+      if (!mounted) return;
+      setState(() => _tracks = tracks);
     });
   }
 
@@ -160,6 +189,67 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     if (mounted) _initPlayer();
   }
 
+  Future<void> _checkPipAvailability() async {
+    try {
+      final available = await SimplePip.isPipAvailable;
+      if (mounted) setState(() => _isPipAvailable = available);
+    } catch (_) {
+      // PiP not supported on this platform
+    }
+  }
+
+  Future<void> _enterPip() async {
+    if (!_isPipAvailable) return;
+    try {
+      await _simplePip.enterPipMode();
+    } catch (e) {
+      dev.log('[Zentrix Player] PiP error: $e');
+    }
+  }
+
+  void _checkAutoPlayNext() {
+    final next = ref.read(channelProvider.notifier).getNextEpisode(widget.channelId);
+    if (next != null) {
+      setState(() {
+        _nextEpisode = next;
+        _showNextEpisode = true;
+        _autoPlayCountdown = 10;
+      });
+      _autoPlayTimer?.cancel();
+      _autoPlayTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+        if (!mounted) {
+          timer.cancel();
+          return;
+        }
+        setState(() => _autoPlayCountdown--);
+        if (_autoPlayCountdown <= 0) {
+          timer.cancel();
+          _playNextEpisode();
+        }
+      });
+    } else {
+      _attemptReconnect();
+    }
+  }
+
+  void _playNextEpisode() {
+    _autoPlayTimer?.cancel();
+    final next = _nextEpisode;
+    if (next == null || !mounted) return;
+
+    Navigator.of(context).pop();
+    context.push('/player', extra: {
+      'streamUrl': next.streamUrl,
+      'channelName': next.name,
+      'channelId': next.id,
+    });
+  }
+
+  void _cancelAutoPlay() {
+    _autoPlayTimer?.cancel();
+    setState(() => _showNextEpisode = false);
+  }
+
   void _startHideTimer() {
     _hideTimer?.cancel();
     _hideTimer = Timer(const Duration(seconds: 4), () {
@@ -210,14 +300,261 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     });
   }
 
+  void _cycleAspect() {
+    setState(() {
+      const values = AspectMode.values;
+      _aspectMode = values[(_aspectMode.index + 1) % values.length];
+    });
+  }
+
+  void _cycleSpeed() {
+    const speeds = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0];
+    final idx = speeds.indexOf(_playbackSpeed);
+    final next = speeds[(idx + 1) % speeds.length];
+    _player.setRate(next);
+    setState(() => _playbackSpeed = next);
+  }
+
+  Future<void> _openExternal() async {
+    final url = widget.streamUrl;
+    final vlcUrl = 'vlc://$url';
+    final uri = Uri.parse(vlcUrl);
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } else {
+      final fallback = Uri.parse(url);
+      await launchUrl(fallback, mode: LaunchMode.externalApplication);
+    }
+  }
+
+  void _showAudioTrackPicker() {
+    final l = AppLocalizations.of(context);
+    final audioTracks = _tracks.audio;
+    if (audioTracks.isEmpty) return;
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.darkSurface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Text(
+                  l.audioTrack,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              ...audioTracks.map((track) {
+                final isActive = track == _tracks.audio.firstOrNull;
+                final title = track.title ?? track.language ?? track.id;
+                return ListTile(
+                  leading: Icon(
+                    Icons.audiotrack_rounded,
+                    color: isActive ? AppColors.primary : Colors.white54,
+                  ),
+                  title: Text(
+                    title,
+                    style: TextStyle(
+                      color: isActive ? AppColors.primary : Colors.white,
+                    ),
+                  ),
+                  onTap: () {
+                    _player.setAudioTrack(track);
+                    Navigator.pop(ctx);
+                  },
+                );
+              }),
+              const SizedBox(height: 8),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  void _showSubtitleTrackPicker() {
+    final l = AppLocalizations.of(context);
+    final subTracks = _tracks.subtitle;
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.darkSurface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Text(
+                  l.subtitleTrack,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              ListTile(
+                leading: const Icon(Icons.subtitles_off_rounded, color: Colors.white54),
+                title: Text(l.off, style: const TextStyle(color: Colors.white)),
+                onTap: () {
+                  _player.setSubtitleTrack(SubtitleTrack.no());
+                  Navigator.pop(ctx);
+                },
+              ),
+              ...subTracks.map((track) {
+                final title = track.title ?? track.language ?? track.id;
+                return ListTile(
+                  leading: const Icon(Icons.subtitles_rounded, color: Colors.white54),
+                  title: Text(
+                    title,
+                    style: const TextStyle(color: Colors.white),
+                  ),
+                  onTap: () {
+                    _player.setSubtitleTrack(track);
+                    Navigator.pop(ctx);
+                  },
+                );
+              }),
+              const SizedBox(height: 8),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  void _showPlayerMenu() {
+    final l = AppLocalizations.of(context);
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.darkSurface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(height: 8),
+              Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.white24,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(height: 16),
+              _MenuTile(
+                icon: Icons.audiotrack_rounded,
+                title: l.audioTrack,
+                subtitle: '${_tracks.audio.length} tracks',
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _showAudioTrackPicker();
+                },
+              ),
+              _MenuTile(
+                icon: Icons.subtitles_rounded,
+                title: l.subtitleTrack,
+                subtitle: _tracks.subtitle.isEmpty ? l.noSubtitleTracks : '${_tracks.subtitle.length} tracks',
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _showSubtitleTrackPicker();
+                },
+              ),
+              _MenuTile(
+                icon: Icons.aspect_ratio_rounded,
+                title: l.aspectRatio,
+                subtitle: _aspectLabel(l),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _cycleAspect();
+                },
+              ),
+              _MenuTile(
+                icon: Icons.speed_rounded,
+                title: l.playbackSpeed,
+                subtitle: '${_playbackSpeed}x',
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _cycleSpeed();
+                },
+              ),
+              _MenuTile(
+                icon: Icons.open_in_new_rounded,
+                title: l.openExternal,
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _openExternal();
+                },
+              ),
+              if (_isPipAvailable)
+                _MenuTile(
+                  icon: Icons.picture_in_picture_alt_rounded,
+                  title: l.pipMode,
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    _enterPip();
+                  },
+                ),
+              const SizedBox(height: 16),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  String _aspectLabel(AppLocalizations l) {
+    switch (_aspectMode) {
+      case AspectMode.fit:
+        return l.fit;
+      case AspectMode.fill:
+        return l.fill;
+      case AspectMode.stretch:
+        return l.stretch;
+    }
+  }
+
+  BoxFit get _videoFit {
+    switch (_aspectMode) {
+      case AspectMode.fit:
+        return BoxFit.contain;
+      case AspectMode.fill:
+        return BoxFit.cover;
+      case AspectMode.stretch:
+        return BoxFit.fill;
+    }
+  }
+
   @override
   void dispose() {
     _hideTimer?.cancel();
     _sliderHideTimer?.cancel();
+    _autoPlayTimer?.cancel();
     _playingSub?.cancel();
     _bufferingSub?.cancel();
     _errorSub?.cancel();
     _completedSub?.cancel();
+    _tracksSub?.cancel();
     _player.dispose();
     WakelockPlus.disable();
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
@@ -239,15 +576,20 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         child: Stack(
           fit: StackFit.expand,
           children: [
-            // Video
             Center(
-              child: Video(
-                controller: _videoController,
-                fill: Colors.black,
-              ),
+              child: _aspectMode == AspectMode.fit
+                  ? Video(controller: _videoController, fill: Colors.black)
+                  : FittedBox(
+                      fit: _videoFit,
+                      clipBehavior: Clip.hardEdge,
+                      child: SizedBox(
+                        width: MediaQuery.of(context).size.width,
+                        height: MediaQuery.of(context).size.height,
+                        child: Video(controller: _videoController, fill: Colors.black),
+                      ),
+                    ),
             ),
 
-            // Buffering indicator
             if (_isBuffering && !_hasError)
               Center(
                 child: Column(
@@ -268,7 +610,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                 ),
               ),
 
-            // Error state
             if (_hasError && _reconnectAttempts >= _maxReconnectAttempts)
               Center(
                 child: Padding(
@@ -324,11 +665,30 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                 ),
               ),
 
-            // Controls overlay
+            // Back button — always visible
+            Positioned(
+              top: topPad + 8,
+              left: 8,
+              child: IconButton(
+                onPressed: () => Navigator.of(context).pop(),
+                icon: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.5),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.arrow_back_ios_new_rounded,
+                    color: Colors.white,
+                    size: 18,
+                  ),
+                ),
+              ),
+            ),
+
             if (_showControls)
               _buildControlsOverlay(context, l, topPad),
 
-            // Brightness slider — left side
             if (_showBrightnessSlider)
               Positioned(
                 left: 24,
@@ -344,7 +704,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                 ),
               ),
 
-            // Volume slider — right side
             if (_showVolumeSlider)
               Positioned(
                 right: 24,
@@ -359,6 +718,19 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                           : Icons.volume_up_rounded,
                   activeColor: AppColors.primary,
                   onChanged: _setVolume,
+                ),
+              ),
+
+            if (_showNextEpisode && _nextEpisode != null)
+              Positioned(
+                bottom: 80,
+                left: 24,
+                right: 24,
+                child: _NextEpisodeCard(
+                  episodeName: _nextEpisode!.name,
+                  countdown: _autoPlayCountdown,
+                  onPlay: _playNextEpisode,
+                  onCancel: _cancelAutoPlay,
                 ),
               ),
           ],
@@ -386,17 +758,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            // Top bar: back + channel info
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               child: Row(
                 children: [
-                  IconButton(
-                    onPressed: () => Navigator.of(context).pop(),
-                    icon: const Icon(Icons.arrow_back_ios_new_rounded),
-                    color: Colors.white,
-                    iconSize: 22,
-                  ),
+                  const SizedBox(width: 48),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Column(
@@ -437,13 +803,28 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                       ],
                     ),
                   ),
+                  if (_playbackSpeed != 1.0)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: AppColors.primary.withValues(alpha: 0.3),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        '${_playbackSpeed}x',
+                        style: const TextStyle(
+                          color: AppColors.primary,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
                 ],
               ),
             ),
 
             const Spacer(),
 
-            // Bottom bar: brightness, fullscreen, volume
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               child: Row(
@@ -461,10 +842,19 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                     isActive: _showBrightnessSlider,
                   ),
                   _ControlButton(
+                    icon: Icons.aspect_ratio_rounded,
+                    onTap: _cycleAspect,
+                    label: _aspectMode.name.toUpperCase(),
+                  ),
+                  _ControlButton(
                     icon: _isFullscreen
                         ? Icons.fullscreen_exit_rounded
                         : Icons.fullscreen_rounded,
                     onTap: _toggleFullscreen,
+                  ),
+                  _ControlButton(
+                    icon: Icons.more_vert_rounded,
+                    onTap: _showPlayerMenu,
                   ),
                   _ControlButton(
                     icon: _volume == 0
@@ -489,34 +879,77 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   }
 }
 
+class _MenuTile extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String? subtitle;
+  final VoidCallback onTap;
+
+  const _MenuTile({
+    required this.icon,
+    required this.title,
+    this.subtitle,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      leading: Icon(icon, color: Colors.white70, size: 22),
+      title: Text(title, style: const TextStyle(color: Colors.white, fontSize: 14)),
+      subtitle: subtitle != null
+          ? Text(subtitle!, style: const TextStyle(color: Colors.white38, fontSize: 12))
+          : null,
+      trailing: const Icon(Icons.chevron_right_rounded, color: Colors.white38, size: 20),
+      onTap: onTap,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 20),
+      visualDensity: VisualDensity.compact,
+    );
+  }
+}
+
 class _ControlButton extends StatelessWidget {
   final IconData icon;
   final VoidCallback onTap;
   final bool isActive;
+  final String? label;
 
   const _ControlButton({
     required this.icon,
     required this.onTap,
     this.isActive = false,
+    this.label,
   });
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: onTap,
-      child: Container(
-        width: 48,
-        height: 48,
-        decoration: BoxDecoration(
-          color: isActive
-              ? AppColors.primary.withValues(alpha: 0.3)
-              : Colors.white.withValues(alpha: 0.1),
-          borderRadius: BorderRadius.circular(14),
-          border: isActive
-              ? Border.all(color: AppColors.primary.withValues(alpha: 0.6))
-              : null,
-        ),
-        child: Icon(icon, color: Colors.white, size: 24),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 48,
+            height: 48,
+            decoration: BoxDecoration(
+              color: isActive
+                  ? AppColors.primary.withValues(alpha: 0.3)
+                  : Colors.white.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(14),
+              border: isActive
+                  ? Border.all(color: AppColors.primary.withValues(alpha: 0.6))
+                  : null,
+            ),
+            child: Icon(icon, color: Colors.white, size: 24),
+          ),
+          if (label != null) ...[
+            const SizedBox(height: 3),
+            Text(
+              label!,
+              style: const TextStyle(color: Colors.white54, fontSize: 9, fontWeight: FontWeight.w600),
+            ),
+          ],
+        ],
       ),
     );
   }
@@ -599,6 +1032,104 @@ class _VerticalSlider extends StatelessWidget {
                   ),
                 );
               },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _NextEpisodeCard extends StatelessWidget {
+  final String episodeName;
+  final int countdown;
+  final VoidCallback onPlay;
+  final VoidCallback onCancel;
+
+  const _NextEpisodeCard({
+    required this.episodeName,
+    required this.countdown,
+    required this.onPlay,
+    required this.onCancel,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final l = AppLocalizations.of(context);
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.85),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.primary.withValues(alpha: 0.4)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 48,
+            height: 48,
+            decoration: BoxDecoration(
+              color: AppColors.primary.withValues(alpha: 0.2),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: const Icon(Icons.skip_next_rounded, color: AppColors.primary, size: 28),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  l.nextEpisode,
+                  style: const TextStyle(
+                    color: Colors.white70,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  episodeName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  l.autoPlayNext(countdown),
+                  style: const TextStyle(color: AppColors.primary, fontSize: 11),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          GestureDetector(
+            onTap: onCancel,
+            child: Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Icon(Icons.close, color: Colors.white54, size: 18),
+            ),
+          ),
+          const SizedBox(width: 8),
+          GestureDetector(
+            onTap: onPlay,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              decoration: BoxDecoration(
+                gradient: AppColors.primaryGradient,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Icon(Icons.play_arrow_rounded, color: Colors.white, size: 22),
             ),
           ),
         ],

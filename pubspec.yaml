@@ -51,6 +51,7 @@ dependencies:
   url_launcher: ^6.3.1
   connectivity_plus: ^6.1.1
   collection: ^1.18.0
+  simple_pip_mode: ^1.1.0
 
 dev_dependencies:
   flutter_test:

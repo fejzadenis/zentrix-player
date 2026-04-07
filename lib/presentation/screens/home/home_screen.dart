@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -7,9 +8,11 @@ import '../../../domain/entities/channel.dart';
 import '../../providers/channel_provider.dart';
 import '../../providers/favorites_provider.dart';
 import '../../providers/epg_provider.dart';
+import '../../providers/watch_history_provider.dart';
 import '../../widgets/channel_tile.dart';
 import '../../widgets/category_sidebar.dart';
 import '../../widgets/shimmer_loading.dart';
+import '../series/series_detail_screen.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
@@ -40,6 +43,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     _tabController.removeListener(_onTabChanged);
     _tabController.dispose();
     super.dispose();
+  }
+
+  void _openPlayer(Channel channel) {
+    context.push('/player', extra: {
+      'streamUrl': channel.streamUrl,
+      'channelName': channel.name,
+      'channelId': channel.id,
+    });
   }
 
   @override
@@ -153,6 +164,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       return _buildContentEmptyState(context, state.selectedContentType);
     }
 
+    final isSeries = state.selectedContentType == ContentType.series;
+
     return Row(
       children: [
         SizedBox(
@@ -166,7 +179,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           ),
         ),
         const VerticalDivider(width: 1),
-        Expanded(child: _buildChannelGrid(context, ref, state)),
+        Expanded(
+          child: isSeries
+              ? _buildSeriesGrid(context, state.filteredChannels)
+              : _buildChannelGrid(context, ref, state),
+        ),
       ],
     );
   }
@@ -181,43 +198,253 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       return _buildContentEmptyState(context, state.selectedContentType);
     }
 
-    return Column(
-      children: [
-        if (state.categories.length > 1)
-          SizedBox(
-            height: 48,
-            child: ListView.builder(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              itemCount: state.categories.length,
-              itemBuilder: (context, index) {
-                final cat = state.categories[index];
-                final isSelected = cat.id == state.selectedCategory;
-                return Padding(
-                  padding: const EdgeInsets.only(right: 8),
-                  child: FilterChip(
-                    selected: isSelected,
-                    label: Text('${cat.name} (${cat.channelCount})'),
-                    onSelected: (_) {
-                      ref
-                          .read(channelProvider.notifier)
-                          .selectCategory(cat.id);
-                    },
-                    selectedColor: AppColors.primary,
-                    labelStyle: TextStyle(
-                      color: isSelected ? Colors.white : null,
-                      fontWeight:
-                          isSelected ? FontWeight.w600 : FontWeight.normal,
-                    ),
-                    showCheckmark: false,
-                  ),
-                );
-              },
+    final recentlyWatched = ref.watch(recentlyWatchedProvider);
+    final continueWatching = ref.watch(continueWatchingProvider);
+    final trendingChannels = ref.watch(trendingProvider);
+
+    final showDiscovery = state.selectedCategory == 'all';
+
+    return CustomScrollView(
+      slivers: [
+        if (showDiscovery && continueWatching.isNotEmpty)
+          SliverToBoxAdapter(
+            child: _DiscoverySection(
+              title: l.continueWatching,
+              icon: Icons.play_circle_rounded,
+              iconColor: AppColors.accent,
+              channels: continueWatching,
+              onChannelTap: _openPlayer,
             ),
           ),
-        const SizedBox(height: 8),
-        Expanded(child: _buildChannelGrid(context, ref, state)),
+
+        if (showDiscovery && recentlyWatched.isNotEmpty)
+          SliverToBoxAdapter(
+            child: _DiscoverySection(
+              title: l.recentlyWatched,
+              icon: Icons.history_rounded,
+              iconColor: AppColors.primaryLight,
+              channels: recentlyWatched,
+              onChannelTap: _openPlayer,
+            ),
+          ),
+
+        if (showDiscovery && trendingChannels.isNotEmpty)
+          SliverToBoxAdapter(
+            child: _DiscoverySection(
+              title: l.trending,
+              icon: Icons.trending_up_rounded,
+              iconColor: AppColors.warning,
+              channels: trendingChannels,
+              onChannelTap: _openPlayer,
+            ),
+          ),
+
+        if (state.categories.length > 1)
+          SliverToBoxAdapter(
+            child: SizedBox(
+              height: 48,
+              child: ListView.builder(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                itemCount: state.categories.length,
+                itemBuilder: (context, index) {
+                  final cat = state.categories[index];
+                  final isSelected = cat.id == state.selectedCategory;
+                  return Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: FilterChip(
+                      selected: isSelected,
+                      label: Text('${cat.name} (${cat.channelCount})'),
+                      onSelected: (_) {
+                        ref.read(channelProvider.notifier).selectCategory(cat.id);
+                      },
+                      selectedColor: AppColors.primary,
+                      labelStyle: TextStyle(
+                        color: isSelected ? Colors.white : null,
+                        fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                      ),
+                      showCheckmark: false,
+                    ),
+                  );
+                },
+              ),
+            ),
+          ),
+
+        const SliverToBoxAdapter(child: SizedBox(height: 8)),
+
+        if (state.selectedContentType == ContentType.series)
+          SliverToBoxAdapter(
+            child: _buildSeriesGrid(context, state.filteredChannels),
+          )
+        else
+          SliverList(
+            delegate: SliverChildBuilderDelegate(
+              (context, index) {
+                final channel = state.filteredChannels[index];
+                final epgNotifier = ref.read(epgProvider.notifier);
+                final currentProgram = epgNotifier.getCurrentProgram(channel.tvgId);
+                final isFav = ref.watch(favoritesProvider).contains(channel.id);
+
+                return ChannelTile(
+                  channel: channel.copyWith(isFavorite: isFav),
+                  currentProgram: currentProgram?.title,
+                  onTap: () => _openPlayer(channel),
+                  onFavoriteToggle: () {
+                    ref.read(favoritesProvider.notifier).toggle(channel.id);
+                  },
+                );
+              },
+              childCount: state.filteredChannels.length,
+            ),
+          ),
+
+        const SliverToBoxAdapter(child: SizedBox(height: 16)),
       ],
+    );
+  }
+
+  Map<String, List<Channel>> _groupSeries(List<Channel> channels) {
+    final groups = <String, List<Channel>>{};
+    for (final ch in channels) {
+      final name = extractSeriesName(ch.name);
+      groups.putIfAbsent(name, () => []).add(ch);
+    }
+    return Map.fromEntries(
+      groups.entries.toList()..sort((a, b) => a.key.compareTo(b.key)),
+    );
+  }
+
+  Widget _buildSeriesGrid(BuildContext context, List<Channel> channels) {
+    final groups = _groupSeries(channels);
+    final entries = groups.entries.toList();
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    return GridView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+        maxCrossAxisExtent: 180,
+        childAspectRatio: 0.65,
+        crossAxisSpacing: 10,
+        mainAxisSpacing: 10,
+      ),
+      itemCount: entries.length,
+      itemBuilder: (context, index) {
+        final entry = entries[index];
+        final seriesName = entry.key;
+        final episodes = entry.value;
+        final logo = episodes.firstWhere(
+          (e) => e.logoUrl.isNotEmpty,
+          orElse: () => episodes.first,
+        ).logoUrl;
+
+        return GestureDetector(
+          onTap: () {
+            context.push('/series-detail', extra: {
+              'seriesName': seriesName,
+              'episodes': episodes,
+            });
+          },
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(
+                child: Container(
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(12),
+                    color: isDark ? AppColors.darkCard : AppColors.lightCard,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.2),
+                        blurRadius: 8,
+                        offset: const Offset(0, 3),
+                      ),
+                    ],
+                  ),
+                  clipBehavior: Clip.antiAlias,
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      if (logo.isNotEmpty)
+                        CachedNetworkImage(
+                          imageUrl: logo,
+                          fit: BoxFit.cover,
+                          placeholder: (_, __) =>
+                              _buildSeriesPlaceholder(seriesName),
+                          errorWidget: (_, __, ___) =>
+                              _buildSeriesPlaceholder(seriesName),
+                        )
+                      else
+                        _buildSeriesPlaceholder(seriesName),
+                      Positioned(
+                        bottom: 0,
+                        left: 0,
+                        right: 0,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 6),
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.bottomCenter,
+                              end: Alignment.topCenter,
+                              colors: [
+                                Colors.black.withValues(alpha: 0.85),
+                                Colors.transparent,
+                              ],
+                            ),
+                          ),
+                          child: Text(
+                            '${episodes.length} ep',
+                            style: const TextStyle(
+                              color: Colors.white70,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 6),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 2),
+                child: Text(
+                  seriesName,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: isDark ? AppColors.textPrimary : AppColors.textDark,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildSeriesPlaceholder(String name) {
+    return Container(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            AppColors.primary.withValues(alpha: 0.3),
+            AppColors.accent.withValues(alpha: 0.2),
+          ],
+        ),
+      ),
+      child: const Center(
+        child: Icon(Icons.tv_rounded, size: 40, color: Colors.white38),
+      ),
     );
   }
 
@@ -240,13 +467,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         return ChannelTile(
           channel: channel.copyWith(isFavorite: isFav),
           currentProgram: currentProgram?.title,
-          onTap: () {
-            context.push('/player', extra: {
-              'streamUrl': channel.streamUrl,
-              'channelName': channel.name,
-              'channelId': channel.id,
-            });
-          },
+          onTap: () => _openPlayer(channel),
           onFavoriteToggle: () {
             ref.read(favoritesProvider.notifier).toggle(channel.id);
           },
@@ -341,6 +562,134 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _DiscoverySection extends StatelessWidget {
+  final String title;
+  final IconData icon;
+  final Color iconColor;
+  final List<Channel> channels;
+  final ValueChanged<Channel> onChannelTap;
+
+  const _DiscoverySection({
+    required this.title,
+    required this.icon,
+    required this.iconColor,
+    required this.channels,
+    required this.onChannelTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 10),
+          child: Row(
+            children: [
+              Icon(icon, color: iconColor, size: 20),
+              const SizedBox(width: 8),
+              Text(
+                title,
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+        ),
+        SizedBox(
+          height: 140,
+          child: ListView.builder(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            itemCount: channels.length,
+            itemBuilder: (context, index) {
+              final channel = channels[index];
+              return GestureDetector(
+                onTap: () => onChannelTap(channel),
+                child: Container(
+                  width: 110,
+                  margin: const EdgeInsets.symmetric(horizontal: 4),
+                  child: Column(
+                    children: [
+                      Container(
+                        width: 110,
+                        height: 80,
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(12),
+                          color: isDark ? AppColors.darkCard : AppColors.lightCard,
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.15),
+                              blurRadius: 8,
+                              offset: const Offset(0, 2),
+                            ),
+                          ],
+                        ),
+                        clipBehavior: Clip.antiAlias,
+                        child: channel.logoUrl.isNotEmpty
+                            ? CachedNetworkImage(
+                                imageUrl: channel.logoUrl,
+                                fit: BoxFit.cover,
+                                placeholder: (_, __) => _buildPlaceholder(channel, isDark),
+                                errorWidget: (_, __, ___) =>
+                                    _buildPlaceholder(channel, isDark),
+                              )
+                            : _buildPlaceholder(channel, isDark),
+                      ),
+                      const SizedBox(height: 6),
+                      SizedBox(
+                        width: 110,
+                        child: Text(
+                          channel.name,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w500,
+                            color: isDark ? AppColors.textPrimary : AppColors.textDark,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildPlaceholder(Channel channel, bool isDark) {
+    return Container(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            AppColors.primary.withValues(alpha: 0.25),
+            AppColors.accent.withValues(alpha: 0.25),
+          ],
+        ),
+      ),
+      child: Center(
+        child: Text(
+          channel.name.isNotEmpty ? channel.name[0].toUpperCase() : '?',
+          style: const TextStyle(
+            fontSize: 28,
+            fontWeight: FontWeight.w800,
+            color: Colors.white70,
+          ),
+        ),
       ),
     );
   }

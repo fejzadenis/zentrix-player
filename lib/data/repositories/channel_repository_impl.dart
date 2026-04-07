@@ -14,6 +14,15 @@ class ChannelRepositoryImpl implements ChannelRepository {
     _channels = channels;
   }
 
+  static ContentType _detectTypeFromUrl(String url) {
+    final lower = url.toLowerCase();
+    if (lower.contains('/series/')) return ContentType.series;
+    if (lower.contains('/movie/') || lower.contains('/movies/')) {
+      return ContentType.movie;
+    }
+    return ContentType.live;
+  }
+
   @override
   Future<List<Channel>> getChannels() async {
     if (_channels.isNotEmpty) return _channels;
@@ -79,8 +88,16 @@ class ChannelRepositoryImpl implements ChannelRepository {
   Future<List<Channel>> getCachedChannels() async {
     final cached = _localStorage.getCachedChannels();
     final favoriteIds = _localStorage.getFavoriteIds();
-    return cached
-        .map((m) => m.toEntity(isFavorite: favoriteIds.contains(m.id)))
-        .toList();
+    return cached.map((m) {
+      final entity = m.toEntity(isFavorite: favoriteIds.contains(m.id));
+      final detectedType = _detectTypeFromUrl(entity.streamUrl);
+      if (detectedType != entity.contentType) {
+        return entity.copyWith(
+          contentType: detectedType,
+          isLive: detectedType == ContentType.live,
+        );
+      }
+      return entity;
+    }).toList();
   }
 }

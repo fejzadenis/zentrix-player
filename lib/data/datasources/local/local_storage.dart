@@ -8,6 +8,7 @@ class LocalStorage {
   Box<PlaylistModel> get _playlistsBox => Hive.box<PlaylistModel>('playlists');
   Box<String> get _recentBox => Hive.box<String>('recent_channels');
   Box<ChannelModel> get _channelsBox => Hive.box<ChannelModel>('cached_channels');
+  Box get _watchHistoryBox => Hive.box('watch_history');
 
   // --- Settings ---
 
@@ -77,6 +78,68 @@ class LocalStorage {
     return _recentBox.getAt(0);
   }
 
+  // --- Watch History ---
+
+  Future<void> recordWatch(String channelId) async {
+    final existing = _watchHistoryBox.get(channelId) as Map? ?? {};
+    final count = (existing['watchCount'] as int?) ?? 0;
+    await _watchHistoryBox.put(channelId, {
+      'channelId': channelId,
+      'lastWatched': DateTime.now().millisecondsSinceEpoch,
+      'watchCount': count + 1,
+      'lastPositionMs': existing['lastPositionMs'] ?? 0,
+    });
+  }
+
+  Future<void> updateWatchPosition(String channelId, int positionMs) async {
+    final existing = _watchHistoryBox.get(channelId) as Map? ?? {};
+    await _watchHistoryBox.put(channelId, {
+      'channelId': channelId,
+      'lastWatched': existing['lastWatched'] ?? DateTime.now().millisecondsSinceEpoch,
+      'watchCount': existing['watchCount'] ?? 1,
+      'lastPositionMs': positionMs,
+    });
+  }
+
+  Map<String, dynamic>? getWatchEntry(String channelId) {
+    final raw = _watchHistoryBox.get(channelId);
+    if (raw == null) return null;
+    return Map<String, dynamic>.from(raw as Map);
+  }
+
+  List<Map<String, dynamic>> getAllWatchHistory() {
+    return _watchHistoryBox.values
+        .map((e) => Map<String, dynamic>.from(e as Map))
+        .toList();
+  }
+
+  List<String> getRecentlyWatchedIds({int limit = 20}) {
+    final entries = getAllWatchHistory();
+    entries.sort((a, b) =>
+        (b['lastWatched'] as int).compareTo(a['lastWatched'] as int));
+    return entries.take(limit).map((e) => e['channelId'] as String).toList();
+  }
+
+  List<String> getMostWatchedIds({int limit = 20}) {
+    final entries = getAllWatchHistory();
+    entries.sort((a, b) =>
+        (b['watchCount'] as int).compareTo(a['watchCount'] as int));
+    return entries
+        .where((e) => (e['watchCount'] as int) >= 2)
+        .take(limit)
+        .map((e) => e['channelId'] as String)
+        .toList();
+  }
+
+  List<String> getContinueWatchingIds({int limit = 10}) {
+    final entries = getAllWatchHistory()
+        .where((e) => (e['lastPositionMs'] as int? ?? 0) > 5000)
+        .toList();
+    entries.sort((a, b) =>
+        (b['lastWatched'] as int).compareTo(a['lastWatched'] as int));
+    return entries.take(limit).map((e) => e['channelId'] as String).toList();
+  }
+
   // --- Cached Channels ---
 
   Future<void> cacheChannels(List<ChannelModel> channels) async {
@@ -99,5 +162,6 @@ class LocalStorage {
     await _playlistsBox.clear();
     await _recentBox.clear();
     await _channelsBox.clear();
+    await _watchHistoryBox.clear();
   }
 }

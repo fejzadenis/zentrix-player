@@ -39,7 +39,17 @@ class ChannelState {
 
   int get liveCount => channels.where((c) => c.contentType == ContentType.live).length;
   int get movieCount => channels.where((c) => c.contentType == ContentType.movie).length;
-  int get seriesCount => channels.where((c) => c.contentType == ContentType.series).length;
+  int get seriesCount {
+    final names = <String>{};
+    final re = RegExp(r'[Ss]\d{1,3}\s*[Ee]\d{1,3}');
+    for (final c in channels) {
+      if (c.contentType != ContentType.series) continue;
+      final match = re.firstMatch(c.name);
+      final base = match != null ? c.name.substring(0, match.start).trim() : c.name;
+      names.add(base);
+    }
+    return names.length;
+  }
 
   ChannelState copyWith({
     List<Channel>? channels,
@@ -101,12 +111,31 @@ class ChannelNotifier extends StateNotifier<ChannelState> {
     _applyContentTypeFilter(state.channels, type);
   }
 
+  static final _seRegex = RegExp(r'[Ss]\d{1,3}\s*[Ee]\d{1,3}');
+
+  static String _seriesBaseName(String name) {
+    final match = _seRegex.firstMatch(name);
+    return match != null ? name.substring(0, match.start).trim() : name;
+  }
+
   void _applyContentTypeFilter(List<Channel> allChannels, ContentType type) {
     final typeChannels = allChannels.where((c) => c.contentType == type).toList();
 
+    final isSeries = type == ContentType.series;
+
     final categoryMap = <String, int>{};
-    for (final ch in typeChannels) {
-      categoryMap[ch.category] = (categoryMap[ch.category] ?? 0) + 1;
+    if (isSeries) {
+      final catSeriesNames = <String, Set<String>>{};
+      for (final ch in typeChannels) {
+        catSeriesNames.putIfAbsent(ch.category, () => {}).add(_seriesBaseName(ch.name));
+      }
+      for (final e in catSeriesNames.entries) {
+        categoryMap[e.key] = e.value.length;
+      }
+    } else {
+      for (final ch in typeChannels) {
+        categoryMap[ch.category] = (categoryMap[ch.category] ?? 0) + 1;
+      }
     }
 
     final categories = categoryMap.entries
@@ -120,9 +149,13 @@ class ChannelNotifier extends StateNotifier<ChannelState> {
             ? 'All Movies'
             : 'All Series';
 
+    final allCount = isSeries
+        ? typeChannels.map((c) => _seriesBaseName(c.name)).toSet().length
+        : typeChannels.length;
+
     categories.insert(
       0,
-      Category(id: 'all', name: allLabel, channelCount: typeChannels.length),
+      Category(id: 'all', name: allLabel, channelCount: allCount),
     );
 
     state = state.copyWith(
@@ -149,6 +182,29 @@ class ChannelNotifier extends StateNotifier<ChannelState> {
         filteredChannels: typeChannels.where((ch) => ch.category == categoryId).toList(),
       );
     }
+  }
+
+  Channel? getNextEpisode(String currentChannelId) {
+    final current = state.channels.firstWhere(
+      (c) => c.id == currentChannelId,
+      orElse: () => const Channel(id: '', name: '', streamUrl: ''),
+    );
+    if (current.id.isEmpty || current.contentType != ContentType.series) {
+      return null;
+    }
+
+    final sameCategory = state.channels
+        .where((c) =>
+            c.contentType == ContentType.series &&
+            c.category == current.category &&
+            c.id != current.id)
+        .toList();
+
+    if (sameCategory.isEmpty) return null;
+
+    final currentIdx = sameCategory.indexWhere((c) => c.name.compareTo(current.name) > 0);
+    if (currentIdx >= 0) return sameCategory[currentIdx];
+    return sameCategory.first;
   }
 
   void updateChannelFavorite(String channelId, bool isFavorite) {

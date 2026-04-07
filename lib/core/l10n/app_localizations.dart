@@ -68,10 +68,29 @@ class AppLocalizations {
   String get addPlaylistToStart => get('addPlaylistToStart');
   String get allChannels => get('allChannels');
 
+  // --- Discovery ---
+  String get recentlyWatched => get('recentlyWatched');
+  String get continueWatching => get('continueWatching');
+  String get trending => get('trending');
+  String get popular => get('popular');
+  String get seeAll => get('seeAll');
+  String get discover => get('discover');
+  String get forYou => get('forYou');
+  String get recentlyAdded => get('recentlyAdded');
+
   // --- Search ---
   String get searchChannels => get('searchChannels');
   String get searchByNameOrCategory => get('searchByNameOrCategory');
   String get noChannelsFound => get('noChannelsFound');
+  String get filterByGenre => get('filterByGenre');
+  String get filterByType => get('filterByType');
+  String get allTypes => get('allTypes');
+  String get sortBy => get('sortBy');
+  String get sortDefault => get('sortDefault');
+  String get sortNameAZ => get('sortNameAZ');
+  String get sortNameZA => get('sortNameZA');
+  String get sortPopular => get('sortPopular');
+  String get clearFilters => get('clearFilters');
 
   // --- Favorites ---
   String get noFavoritesYet => get('noFavoritesYet');
@@ -93,6 +112,21 @@ class AppLocalizations {
   String get loadingStream => get('loadingStream');
   String reconnecting(int current, int max) =>
       get('reconnecting').replaceFirst('{current}', '$current').replaceFirst('{max}', '$max');
+  String get audioTrack => get('audioTrack');
+  String get subtitleTrack => get('subtitleTrack');
+  String get aspectRatio => get('aspectRatio');
+  String get playbackSpeed => get('playbackSpeed');
+  String get openExternal => get('openExternal');
+  String get noAudioTracks => get('noAudioTracks');
+  String get noSubtitleTracks => get('noSubtitleTracks');
+  String get off => get('off');
+  String get fit => get('fit');
+  String get fill => get('fill');
+  String get stretch => get('stretch');
+  String get nextEpisode => get('nextEpisode');
+  String autoPlayNext(int seconds) =>
+      get('autoPlayNext').replaceFirst('{seconds}', '$seconds');
+  String get pipMode => get('pipMode');
 
   // --- Settings ---
   String get appearance => get('appearance');
