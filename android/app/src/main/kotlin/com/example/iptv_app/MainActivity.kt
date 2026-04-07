@@ -1,5 +1,5 @@
 package com.example.iptv_app
 
-import dev.buentello.simple_pip_mode.SimplePipActivity
+import io.flutter.embedding.android.FlutterActivity
 
-class MainActivity : SimplePipActivity()
+class MainActivity : FlutterActivity()

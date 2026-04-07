@@ -206,6 +206,15 @@ class AppLocalizations {
   String get sortCustom => get('sortCustom');
   String get sortRecent => get('sortRecent');
 
+  // --- License / Paywall ---
+  String get paywallTitle => get('paywallTitle');
+  String get paywallSubtitle => get('paywallSubtitle');
+  String get trialRemainingLabel => get('trialRemainingLabel');
+  String get activationCodeHint => get('activationCodeHint');
+  String get activate => get('activate');
+  String get restoreOrRefresh => get('restoreOrRefresh');
+  String get browseLibraryOnly => get('browseLibraryOnly');
+
   // --- Device ---
   String get deviceInfo => get('deviceInfo');
   String get macAddress => get('macAddress');

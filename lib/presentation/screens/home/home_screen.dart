@@ -490,13 +490,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           orElse: () => episodes.first,
         ).logoUrl;
 
-        return GestureDetector(
+        return _TvFocusableCard(
           onTap: () {
             context.push('/series-detail', extra: {
               'seriesName': seriesName,
               'episodes': episodes,
             });
           },
+          borderRadius: 12,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -764,11 +765,12 @@ class _DiscoverySection extends StatelessWidget {
             itemCount: channels.length,
             itemBuilder: (context, index) {
               final channel = channels[index];
-              return GestureDetector(
-                onTap: () => onChannelTap(channel),
-                child: Container(
-                  width: 110,
-                  margin: const EdgeInsets.symmetric(horizontal: 4),
+              return Container(
+                width: 110,
+                margin: const EdgeInsets.symmetric(horizontal: 4),
+                child: _TvFocusableCard(
+                  onTap: () => onChannelTap(channel),
+                  borderRadius: 12,
                   child: Column(
                     children: [
                       Container(
@@ -883,6 +885,64 @@ class _CountBadge extends StatelessWidget {
       child: Text(
         _label,
         style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w600),
+      ),
+    );
+  }
+}
+
+class _TvFocusableCard extends StatefulWidget {
+  final Widget child;
+  final VoidCallback onTap;
+  final double borderRadius;
+
+  const _TvFocusableCard({
+    required this.child,
+    required this.onTap,
+    required this.borderRadius,
+  });
+
+  @override
+  State<_TvFocusableCard> createState() => _TvFocusableCardState();
+}
+
+class _TvFocusableCardState extends State<_TvFocusableCard> {
+  bool _isFocused = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 120),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(widget.borderRadius),
+        border: Border.all(
+          color: _isFocused ? AppColors.primary : Colors.transparent,
+          width: 2,
+        ),
+        boxShadow: _isFocused
+            ? [
+                BoxShadow(
+                  color: AppColors.primary.withValues(alpha: 0.35),
+                  blurRadius: 10,
+                ),
+              ]
+            : null,
+      ),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(widget.borderRadius),
+        onTap: widget.onTap,
+        onFocusChange: (focused) {
+          if (_isFocused == focused) return;
+          setState(() => _isFocused = focused);
+          if (focused) {
+            Scrollable.ensureVisible(
+              context,
+              alignment: 0.2,
+              duration: const Duration(milliseconds: 120),
+              curve: Curves.easeOut,
+            );
+          }
+        },
+        child: widget.child,
       ),
     );
   }

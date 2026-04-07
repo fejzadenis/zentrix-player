@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../providers/channel_provider.dart';
+import '../../providers/license_provider.dart';
 
 class SplashScreen extends ConsumerStatefulWidget {
   const SplashScreen({super.key});
@@ -37,9 +38,17 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
   Future<void> _navigate() async {
     await Future.delayed(const Duration(seconds: 2));
 
+    await ref.read(licenseProvider.notifier).bootstrap();
     await ref.read(channelProvider.notifier).loadCachedChannels();
 
     if (!mounted) return;
+
+    final licenseNotifier = ref.read(licenseProvider.notifier);
+    final licenseState = ref.read(licenseProvider);
+    if (licenseNotifier.isLicensingConfigured && !licenseState.canPlay) {
+      context.go('/paywall');
+      return;
+    }
 
     final hasChannels = ref.read(channelProvider).channels.isNotEmpty;
     if (hasChannels) {

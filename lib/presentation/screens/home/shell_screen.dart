@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/l10n/app_localizations.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../domain/entities/license.dart';
+import '../../providers/license_provider.dart';
 
-class ShellScreen extends StatelessWidget {
+class ShellScreen extends ConsumerWidget {
   final Widget child;
 
   const ShellScreen({super.key, required this.child});
@@ -31,17 +34,55 @@ class ShellScreen extends StatelessWidget {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final selectedIndex = _calculateSelectedIndex(context);
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final l = AppLocalizations.of(context);
+    final licenseState = ref.watch(licenseProvider);
+    final licenseNotifier = ref.read(licenseProvider.notifier);
+    final lic = licenseState.license;
+    final showTrialBanner = licenseNotifier.isLicensingConfigured &&
+        lic?.status == LicenseStatus.trial &&
+        (licenseNotifier.trialCountdownLabel != null);
 
     return Scaffold(
-      body: AnimatedSwitcher(
-        duration: const Duration(milliseconds: 200),
-        switchInCurve: Curves.easeOut,
-        switchOutCurve: Curves.easeIn,
-        child: child,
+      body: Column(
+        children: [
+          if (showTrialBanner)
+            Material(
+              color: AppColors.primary.withValues(alpha: 0.18),
+              child: SafeArea(
+                bottom: false,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.timer_outlined, color: AppColors.primary, size: 18),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          '${l.trialRemainingLabel}: ${licenseNotifier.trialCountdownLabel}',
+                          style: const TextStyle(
+                            color: AppColors.primary,
+                            fontWeight: FontWeight.w600,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          Expanded(
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 200),
+              switchInCurve: Curves.easeOut,
+              switchOutCurve: Curves.easeIn,
+              child: child,
+            ),
+          ),
+        ],
       ),
       bottomNavigationBar: Container(
         decoration: BoxDecoration(

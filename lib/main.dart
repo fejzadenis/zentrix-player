@@ -32,6 +32,8 @@ void main() async {
     Hive.openBox<String>('recent_channels'),
     Hive.openBox<ChannelModel>('cached_channels'),
     Hive.openBox('watch_history'),
+    Hive.openBox('license_cache'),
+    Hive.openBox<String>('secure_storage'),
   ]);
 
   runApp(const ProviderScope(child: IPTVApp()));

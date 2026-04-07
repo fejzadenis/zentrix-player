@@ -1,0 +1,20 @@
+{
+  "name": "zentrix-license-server",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Example license API for Zentrix (Express + JSON store; swap for Postgres in production).",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node --watch index.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.21.2",
+    "jsonwebtoken": "^9.0.2",
+    "uuid": "^11.0.5"
+  }
+}

@@ -13,6 +13,7 @@ import '../../../core/l10n/app_localizations.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../domain/entities/channel.dart';
 import '../../providers/channel_provider.dart';
+import '../../providers/license_provider.dart';
 import '../../providers/player_provider.dart';
 import '../../providers/settings_provider.dart';
 
@@ -39,8 +40,9 @@ class PlayerScreen extends ConsumerStatefulWidget {
 }
 
 class _PlayerScreenState extends ConsumerState<PlayerScreen> {
-  late final Player _player;
-  late final VideoController _videoController;
+  Player? _player;
+  VideoController? _videoController;
+  bool _playerReady = false;
   bool _showControls = true;
   Timer? _hideTimer;
   bool _isFullscreen = false;
@@ -103,11 +105,24 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       _currentContentType = _channelList![_currentIndex].contentType;
     }
 
+    WidgetsBinding.instance.addPostFrameCallback((_) => _bootstrapPlayer());
+  }
+
+  Future<void> _bootstrapPlayer() async {
+    final allowed =
+        await ref.read(licenseProvider.notifier).ensurePlaybackAllowed();
+    if (!mounted) return;
+    if (!allowed) {
+      context.pop();
+      context.push('/paywall');
+      return;
+    }
+
     WakelockPlus.enable();
     _startHideTimer();
 
     _player = Player();
-    _videoController = VideoController(_player);
+    _videoController = VideoController(_player!);
 
     _setupListeners();
     _checkPipAvailability();
@@ -124,6 +139,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       _checkResume(storage);
     });
 
+    setState(() => _playerReady = true);
     _initPlayer();
   }
 
@@ -145,7 +161,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         content: Text(l.resumeFrom(formatted)),
         action: SnackBarAction(
           label: l.resumePlayback,
-          onPressed: () => _player.seek(pos),
+          onPressed: () => _player?.seek(pos),
         ),
         duration: const Duration(seconds: 5),
         behavior: SnackBarBehavior.floating,
@@ -154,17 +170,18 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   }
 
   void _setupListeners() {
-    _playingSub = _player.stream.playing.listen((playing) {
+    final p = _player!;
+    _playingSub = p.stream.playing.listen((playing) {
       if (!mounted) return;
       setState(() {});
     });
 
-    _bufferingSub = _player.stream.buffering.listen((buffering) {
+    _bufferingSub = p.stream.buffering.listen((buffering) {
       if (!mounted) return;
       setState(() => _isBuffering = buffering);
     });
 
-    _errorSub = _player.stream.error.listen((error) {
+    _errorSub = p.stream.error.listen((error) {
       if (!mounted) return;
       dev.log('[Zentrix Player] ERROR: $error');
       setState(() {
@@ -174,22 +191,22 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       _attemptReconnect();
     });
 
-    _completedSub = _player.stream.completed.listen((completed) {
+    _completedSub = p.stream.completed.listen((completed) {
       if (!mounted || !completed) return;
       _checkAutoPlayNext();
     });
 
-    _player.stream.volume.listen((vol) {
+    p.stream.volume.listen((vol) {
       if (!mounted) return;
       setState(() => _volume = vol / 100.0);
     });
 
-    _tracksSub = _player.stream.tracks.listen((tracks) {
+    _tracksSub = p.stream.tracks.listen((tracks) {
       if (!mounted) return;
       setState(() => _tracks = tracks);
     });
 
-    _positionSub = _player.stream.position.listen((position) {
+    _positionSub = p.stream.position.listen((position) {
       if (!mounted || _currentChannelId.isEmpty) return;
       if (_currentContentType == ContentType.live) return;
       if (position.inSeconds > 0 && position.inSeconds % 5 == 0) {
@@ -227,7 +244,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     });
 
     try {
-      await _player.open(
+      await _player!.open(
         Media(url, httpHeaders: {'User-Agent': 'Zentrix/1.0'}),
       );
     } catch (e) {
@@ -388,7 +405,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
   void _setVolume(double v) {
     final clamped = v.clamp(0.0, 1.0);
-    _player.setVolume(clamped * 100);
+    _player!.setVolume(clamped * 100);
     setState(() => _volume = clamped);
     _resetSliderTimer();
   }
@@ -421,7 +438,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     const speeds = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0];
     final idx = speeds.indexOf(_playbackSpeed);
     final next = speeds[(idx + 1) % speeds.length];
-    _player.setRate(next);
+    _player!.setRate(next);
     setState(() => _playbackSpeed = next);
   }
 
@@ -479,7 +496,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                     ),
                   ),
                   onTap: () {
-                    _player.setAudioTrack(track);
+                    _player!.setAudioTrack(track);
                     Navigator.pop(ctx);
                   },
                 );
@@ -522,7 +539,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                 leading: const Icon(Icons.subtitles_off_rounded, color: Colors.white54),
                 title: Text(l.off, style: const TextStyle(color: Colors.white)),
                 onTap: () {
-                  _player.setSubtitleTrack(SubtitleTrack.no());
+                  _player!.setSubtitleTrack(SubtitleTrack.no());
                   Navigator.pop(ctx);
                 },
               ),
@@ -535,7 +552,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                     style: const TextStyle(color: Colors.white),
                   ),
                   onTap: () {
-                    _player.setSubtitleTrack(track);
+                    _player!.setSubtitleTrack(track);
                     Navigator.pop(ctx);
                   },
                 );
@@ -668,7 +685,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     _completedSub?.cancel();
     _tracksSub?.cancel();
     _positionSub?.cancel();
-    _player.dispose();
+    _player?.dispose();
     WakelockPlus.disable();
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
@@ -680,6 +697,17 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     final l = AppLocalizations.of(context);
     final screenH = MediaQuery.of(context).size.height;
     final topPad = MediaQuery.of(context).padding.top;
+
+    if (!_playerReady || _videoController == null) {
+      return const Scaffold(
+        backgroundColor: Colors.black,
+        body: Center(
+          child: CircularProgressIndicator(color: AppColors.primary),
+        ),
+      );
+    }
+
+    final vc = _videoController!;
 
     return Scaffold(
       backgroundColor: Colors.black,
@@ -699,14 +727,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
           children: [
             Center(
               child: _aspectMode == AspectMode.fit
-                  ? Video(controller: _videoController, fill: Colors.black, controls: _noControls)
+                  ? Video(controller: vc, fill: Colors.black, controls: _noControls)
                   : FittedBox(
                       fit: _videoFit,
                       clipBehavior: Clip.hardEdge,
                       child: SizedBox(
                         width: MediaQuery.of(context).size.width,
                         height: MediaQuery.of(context).size.height,
-                        child: Video(controller: _videoController, fill: Colors.black, controls: _noControls),
+                        child: Video(controller: vc, fill: Colors.black, controls: _noControls),
                       ),
                     ),
             ),

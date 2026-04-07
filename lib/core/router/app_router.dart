@@ -12,6 +12,7 @@ import '../../presentation/screens/favorites/favorites_screen.dart';
 import '../../presentation/screens/settings/settings_screen.dart';
 import '../../presentation/screens/home/shell_screen.dart';
 import '../../presentation/screens/series/series_detail_screen.dart';
+import '../../presentation/screens/paywall/paywall_screen.dart';
 
 CustomTransitionPage<void> _fadeTransition(Widget child, GoRouterState state) {
   return CustomTransitionPage(
@@ -51,6 +52,10 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/',
         pageBuilder: (context, state) => _fadeTransition(const SplashScreen(), state),
+      ),
+      GoRoute(
+        path: '/paywall',
+        pageBuilder: (context, state) => _fadeTransition(const PaywallScreen(), state),
       ),
       GoRoute(
         path: '/playlist-input',

@@ -183,6 +183,16 @@ const Map<String, String> stringsSr = {
   'sortCustom': 'Prilagođeno',
   'sortRecent': 'Nedavno gledano',
 
+  // License / Paywall
+  'paywallTitle': 'Otključaj Zentrix Premium',
+  'paywallSubtitle':
+      'Probni period je istekao ili pretplata nije aktivna. Unesite aktivacioni kod ili osvežite nakon kupovine.',
+  'trialRemainingLabel': 'Preostalo vreme probnog perioda',
+  'activationCodeHint': 'Aktivacioni kod',
+  'activate': 'Aktiviraj',
+  'restoreOrRefresh': 'Osveži licencu',
+  'browseLibraryOnly': 'Pregled biblioteke (reprodukcija zaključana)',
+
   // Device
   'deviceInfo': 'Informacije o uređaju',
   'macAddress': 'MAC adresa',

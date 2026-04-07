@@ -26,6 +26,7 @@ class _ChannelTileState extends State<ChannelTile>
     with SingleTickerProviderStateMixin {
   late final AnimationController _pressController;
   late final Animation<double> _scaleAnim;
+  bool _isFocused = false;
 
   @override
   void initState() {
@@ -50,11 +51,14 @@ class _ChannelTileState extends State<ChannelTile>
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final l = AppLocalizations.of(context);
+    final borderColor = _isFocused
+        ? AppColors.primary
+        : Colors.transparent;
 
     return AnimatedBuilder(
       animation: _scaleAnim,
       builder: (context, child) => Transform.scale(
-        scale: _scaleAnim.value,
+        scale: _isFocused ? 1.01 : _scaleAnim.value,
         child: child,
       ),
       child: Padding(
@@ -62,118 +66,150 @@ class _ChannelTileState extends State<ChannelTile>
         child: Material(
           color: isDark ? AppColors.darkCard : AppColors.lightCard,
           borderRadius: BorderRadius.circular(14),
-          child: InkWell(
-            onTap: widget.onTap,
-            onTapDown: (_) => _pressController.forward(),
-            onTapUp: (_) => _pressController.reverse(),
-            onTapCancel: () => _pressController.reverse(),
-            borderRadius: BorderRadius.circular(14),
-            child: Padding(
-              padding: const EdgeInsets.all(12),
-              child: Row(
-                children: [
-                  _buildLogo(),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          widget.channel.name,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            fontWeight: FontWeight.w600,
-                            fontSize: 15,
-                          ),
-                        ),
-                        const SizedBox(height: 3),
-                        Row(
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 6,
-                                vertical: 2,
-                              ),
-                              decoration: BoxDecoration(
-                                color: AppColors.primary.withValues(alpha: 0.12),
-                                borderRadius: BorderRadius.circular(4),
-                              ),
-                              child: Text(
-                                widget.channel.category,
-                                style: const TextStyle(
-                                  fontSize: 11,
-                                  color: AppColors.primary,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                            ),
-                            if (widget.channel.isLive) ...[
-                              const SizedBox(width: 8),
-                              Container(
-                                width: 6,
-                                height: 6,
-                                decoration: const BoxDecoration(
-                                  color: AppColors.live,
-                                  shape: BoxShape.circle,
-                                ),
-                              ),
-                              const SizedBox(width: 4),
-                              Text(
-                                l.live,
-                                style: const TextStyle(
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.w700,
-                                  color: AppColors.live,
-                                ),
-                              ),
-                            ],
-                            if (widget.channel.contentType == ContentType.movie) ...[
-                              const SizedBox(width: 8),
-                              const Icon(Icons.movie_rounded, size: 12, color: AppColors.accent),
-                            ],
-                            if (widget.channel.contentType == ContentType.series) ...[
-                              const SizedBox(width: 8),
-                              const Icon(Icons.tv_rounded, size: 12, color: AppColors.warning),
-                            ],
-                          ],
-                        ),
-                        if (widget.currentProgram != null) ...[
-                          const SizedBox(height: 4),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 120),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(
+                color: borderColor,
+                width: _isFocused ? 2 : 1,
+              ),
+              boxShadow: _isFocused
+                  ? [
+                      BoxShadow(
+                        color: AppColors.primary.withValues(alpha: 0.35),
+                        blurRadius: 12,
+                        spreadRadius: 1,
+                      ),
+                    ]
+                  : null,
+            ),
+            child: InkWell(
+              onTap: widget.onTap,
+              onTapDown: (_) => _pressController.forward(),
+              onTapUp: (_) => _pressController.reverse(),
+              onTapCancel: () => _pressController.reverse(),
+              onFocusChange: (hasFocus) {
+                if (_isFocused == hasFocus) return;
+                setState(() => _isFocused = hasFocus);
+                if (hasFocus) {
+                  Scrollable.ensureVisible(
+                    context,
+                    alignment: 0.2,
+                    duration: const Duration(milliseconds: 120),
+                    curve: Curves.easeOut,
+                  );
+                }
+              },
+              borderRadius: BorderRadius.circular(14),
+              focusColor: AppColors.primary.withValues(alpha: 0.1),
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Row(
+                  children: [
+                    _buildLogo(),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
                           Text(
-                            widget.currentProgram!,
+                            widget.channel.name,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
-                              fontSize: 12,
-                              color: AppColors.textSecondary,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 15,
                             ),
                           ),
+                          const SizedBox(height: 3),
+                          Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 6,
+                                  vertical: 2,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: AppColors.primary.withValues(alpha: 0.12),
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: Text(
+                                  widget.channel.category,
+                                  style: const TextStyle(
+                                    fontSize: 11,
+                                    color: AppColors.primary,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ),
+                              if (widget.channel.isLive) ...[
+                                const SizedBox(width: 8),
+                                Container(
+                                  width: 6,
+                                  height: 6,
+                                  decoration: const BoxDecoration(
+                                    color: AppColors.live,
+                                    shape: BoxShape.circle,
+                                  ),
+                                ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  l.live,
+                                  style: const TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w700,
+                                    color: AppColors.live,
+                                  ),
+                                ),
+                              ],
+                              if (widget.channel.contentType == ContentType.movie) ...[
+                                const SizedBox(width: 8),
+                                const Icon(Icons.movie_rounded, size: 12, color: AppColors.accent),
+                              ],
+                              if (widget.channel.contentType == ContentType.series) ...[
+                                const SizedBox(width: 8),
+                                const Icon(Icons.tv_rounded, size: 12, color: AppColors.warning),
+                              ],
+                            ],
+                          ),
+                          if (widget.currentProgram != null) ...[
+                            const SizedBox(height: 4),
+                            Text(
+                              widget.currentProgram!,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 12,
+                                color: AppColors.textSecondary,
+                              ),
+                            ),
+                          ],
                         ],
-                      ],
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  GestureDetector(
-                    onTap: widget.onFavoriteToggle,
-                    child: AnimatedSwitcher(
-                      duration: const Duration(milliseconds: 200),
-                      transitionBuilder: (child, animation) {
-                        return ScaleTransition(scale: animation, child: child);
-                      },
-                      child: Icon(
-                        widget.channel.isFavorite
-                            ? Icons.favorite_rounded
-                            : Icons.favorite_border_rounded,
-                        key: ValueKey(widget.channel.isFavorite),
-                        color: widget.channel.isFavorite
-                            ? AppColors.accentAlt
-                            : AppColors.textSecondary,
-                        size: 22,
                       ),
                     ),
-                  ),
-                ],
+                    const SizedBox(width: 8),
+                    GestureDetector(
+                      onTap: widget.onFavoriteToggle,
+                      child: AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 200),
+                        transitionBuilder: (child, animation) {
+                          return ScaleTransition(scale: animation, child: child);
+                        },
+                        child: Icon(
+                          widget.channel.isFavorite
+                              ? Icons.favorite_rounded
+                              : Icons.favorite_border_rounded,
+                          key: ValueKey(widget.channel.isFavorite),
+                          color: widget.channel.isFavorite
+                              ? AppColors.accentAlt
+                              : AppColors.textSecondary,
+                          size: 22,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),

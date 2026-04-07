@@ -183,6 +183,16 @@ const Map<String, String> stringsEn = {
   'sortCustom': 'Custom',
   'sortRecent': 'Recently Watched',
 
+  // License / Paywall
+  'paywallTitle': 'Unlock Zentrix Premium',
+  'paywallSubtitle':
+      'Your trial has ended or your subscription is inactive. Enter an activation code or refresh after purchase.',
+  'trialRemainingLabel': 'Trial time remaining',
+  'activationCodeHint': 'Activation code',
+  'activate': 'Activate',
+  'restoreOrRefresh': 'Refresh license',
+  'browseLibraryOnly': 'Browse library (playback locked)',
+
   // Device
   'deviceInfo': 'Device Info',
   'macAddress': 'MAC Address',
