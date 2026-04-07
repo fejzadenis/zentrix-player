@@ -118,8 +118,11 @@ class ChannelNotifier extends StateNotifier<ChannelState> {
     return match != null ? name.substring(0, match.start).trim() : name;
   }
 
-  void _applyContentTypeFilter(List<Channel> allChannels, ContentType type) {
-    final typeChannels = allChannels.where((c) => c.contentType == type).toList();
+  void _applyContentTypeFilter(List<Channel> allChannels, ContentType type,
+      [Set<String> hiddenCategories = const {}]) {
+    final typeChannels = allChannels
+        .where((c) => c.contentType == type && !hiddenCategories.contains(c.category))
+        .toList();
 
     final isSeries = type == ContentType.series;
 
@@ -168,6 +171,10 @@ class ChannelNotifier extends StateNotifier<ChannelState> {
     );
   }
 
+  void applyHiddenFilter(Set<String> hiddenCategories) {
+    _applyContentTypeFilter(state.channels, state.selectedContentType, hiddenCategories);
+  }
+
   Future<void> selectCategory(String categoryId) async {
     state = state.copyWith(selectedCategory: categoryId);
 
@@ -205,6 +212,29 @@ class ChannelNotifier extends StateNotifier<ChannelState> {
     final currentIdx = sameCategory.indexWhere((c) => c.name.compareTo(current.name) > 0);
     if (currentIdx >= 0) return sameCategory[currentIdx];
     return sameCategory.first;
+  }
+
+  void sortChannels(String sortMode, [List<String>? customOrder]) {
+    var sorted = List<Channel>.from(state.filteredChannels);
+    switch (sortMode) {
+      case 'az':
+        sorted.sort((a, b) => a.name.compareTo(b.name));
+      case 'za':
+        sorted.sort((a, b) => b.name.compareTo(a.name));
+      case 'custom':
+        if (customOrder != null) {
+          final orderMap = <String, int>{};
+          for (var i = 0; i < customOrder.length; i++) {
+            orderMap[customOrder[i]] = i;
+          }
+          sorted.sort((a, b) {
+            final ai = orderMap[a.id] ?? 999999;
+            final bi = orderMap[b.id] ?? 999999;
+            return ai.compareTo(bi);
+          });
+        }
+    }
+    state = state.copyWith(filteredChannels: sorted);
   }
 
   void updateChannelFavorite(String channelId, bool isFavorite) {

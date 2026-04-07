@@ -91,6 +91,8 @@ final routerProvider = Provider<GoRouter>((ref) {
               streamUrl: extra['streamUrl'] as String,
               channelName: extra['channelName'] as String,
               channelId: extra['channelId'] as String? ?? '',
+              channelList: extra['channelList'] as List<Channel>?,
+              currentIndex: extra['currentIndex'] as int? ?? -1,
             ),
             transitionDuration: const Duration(milliseconds: 350),
             reverseTransitionDuration: const Duration(milliseconds: 250),

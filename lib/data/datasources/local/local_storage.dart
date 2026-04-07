@@ -156,6 +156,38 @@ class LocalStorage {
     return _channelsBox.get(id);
   }
 
+  // --- EPG Cache ---
+
+  Future<void> cacheEpgData(Map<String, dynamic> epgJson) async {
+    await _settingsBox.put('epg_cache', epgJson);
+    await _settingsBox.put('epg_cache_time', DateTime.now().millisecondsSinceEpoch);
+  }
+
+  Map<String, dynamic>? getCachedEpgData() {
+    final raw = _settingsBox.get('epg_cache');
+    if (raw == null) return null;
+    return Map<String, dynamic>.from(raw as Map);
+  }
+
+  bool isEpgCacheValid({int maxAgeHours = 6}) {
+    final cacheTime = _settingsBox.get('epg_cache_time') as int?;
+    if (cacheTime == null) return false;
+    final age = DateTime.now().millisecondsSinceEpoch - cacheTime;
+    return age < maxAgeHours * 3600 * 1000;
+  }
+
+  // --- Channel Sort Order ---
+
+  Future<void> saveChannelSortOrder(String key, List<String> channelIds) async {
+    await _settingsBox.put('sort_order_$key', channelIds);
+  }
+
+  List<String>? getChannelSortOrder(String key) {
+    final raw = _settingsBox.get('sort_order_$key');
+    if (raw == null) return null;
+    return List<String>.from(raw as List);
+  }
+
   Future<void> clearAll() async {
     await _settingsBox.clear();
     await _favoritesBox.clear();

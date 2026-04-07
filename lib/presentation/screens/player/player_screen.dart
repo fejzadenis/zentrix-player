@@ -22,12 +22,16 @@ class PlayerScreen extends ConsumerStatefulWidget {
   final String streamUrl;
   final String channelName;
   final String channelId;
+  final List<Channel>? channelList;
+  final int currentIndex;
 
   const PlayerScreen({
     super.key,
     required this.streamUrl,
     required this.channelName,
     this.channelId = '',
+    this.channelList,
+    this.currentIndex = -1,
   });
 
   @override
@@ -63,6 +67,21 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   final SimplePip _simplePip = SimplePip();
   bool _isPipAvailable = false;
 
+  // Channel zapping
+  late String _currentStreamUrl;
+  late String _currentChannelName;
+  late String _currentChannelId;
+  ContentType _currentContentType = ContentType.live;
+  List<Channel>? _channelList;
+  int _currentIndex = -1;
+  String? _lastChannelId;
+  String? _lastStreamUrl;
+  String? _lastChannelName;
+
+  // Resume playback
+  StreamSubscription? _positionSub;
+  bool _hasResumed = false;
+
   StreamSubscription? _playingSub;
   StreamSubscription? _bufferingSub;
   StreamSubscription? _errorSub;
@@ -74,6 +93,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   @override
   void initState() {
     super.initState();
+    _currentStreamUrl = widget.streamUrl;
+    _currentChannelName = widget.channelName;
+    _currentChannelId = widget.channelId;
+    _channelList = widget.channelList;
+    _currentIndex = widget.currentIndex;
+
+    if (_channelList != null && _currentIndex >= 0 && _currentIndex < _channelList!.length) {
+      _currentContentType = _channelList![_currentIndex].contentType;
+    }
+
     WakelockPlus.enable();
     _startHideTimer();
 
@@ -86,15 +115,42 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     Future.microtask(() {
       if (!mounted) return;
       final storage = ref.read(localStorageProvider);
-      storage.recordWatch(widget.channelId);
+      storage.recordWatch(_currentChannelId);
       ref.read(playerProvider.notifier).setChannel(
-            widget.channelId,
-            widget.channelName,
-            widget.streamUrl,
+            _currentChannelId,
+            _currentChannelName,
+            _currentStreamUrl,
           );
+      _checkResume(storage);
     });
 
     _initPlayer();
+  }
+
+  void _checkResume(dynamic storage) {
+    if (_hasResumed) return;
+    if (_currentContentType == ContentType.live) return;
+    final entry = storage.getWatchEntry(_currentChannelId);
+    if (entry == null) return;
+    final posMs = entry['lastPositionMs'] as int? ?? 0;
+    if (posMs <= 5000) return;
+
+    _hasResumed = true;
+    final pos = Duration(milliseconds: posMs);
+    final formatted = '${pos.inMinutes}:${(pos.inSeconds % 60).toString().padLeft(2, '0')}';
+    final l = AppLocalizations.of(context);
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(l.resumeFrom(formatted)),
+        action: SnackBarAction(
+          label: l.resumePlayback,
+          onPressed: () => _player.seek(pos),
+        ),
+        duration: const Duration(seconds: 5),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
   }
 
   void _setupListeners() {
@@ -132,10 +188,19 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       if (!mounted) return;
       setState(() => _tracks = tracks);
     });
+
+    _positionSub = _player.stream.position.listen((position) {
+      if (!mounted || _currentChannelId.isEmpty) return;
+      if (_currentContentType == ContentType.live) return;
+      if (position.inSeconds > 0 && position.inSeconds % 5 == 0) {
+        final storage = ref.read(localStorageProvider);
+        storage.updateWatchPosition(_currentChannelId, position.inMilliseconds);
+      }
+    });
   }
 
   Future<void> _initPlayer() async {
-    final url = widget.streamUrl;
+    final url = _currentStreamUrl;
     if (url.isEmpty) {
       setState(() {
         _hasError = true;
@@ -175,6 +240,51 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       });
       _attemptReconnect();
     }
+  }
+
+  void _zapChannel(int direction) {
+    if (_channelList == null || _channelList!.isEmpty) return;
+    final list = _channelList!;
+    int newIndex = _currentIndex + direction;
+    if (newIndex < 0) newIndex = list.length - 1;
+    if (newIndex >= list.length) newIndex = 0;
+
+    final newChannel = list[newIndex];
+    _switchToChannel(newChannel, newIndex);
+  }
+
+  void _switchToChannel(Channel channel, [int? index]) {
+    _lastChannelId = _currentChannelId;
+    _lastStreamUrl = _currentStreamUrl;
+    _lastChannelName = _currentChannelName;
+
+    setState(() {
+      _currentStreamUrl = channel.streamUrl;
+      _currentChannelName = channel.name;
+      _currentChannelId = channel.id;
+      _currentContentType = channel.contentType;
+      if (index != null) _currentIndex = index;
+      _reconnectAttempts = 0;
+      _hasError = false;
+      _hasResumed = false;
+    });
+
+    final storage = ref.read(localStorageProvider);
+    storage.recordWatch(channel.id);
+    ref.read(playerProvider.notifier).setChannel(
+          channel.id, channel.name, channel.streamUrl);
+
+    _initPlayer();
+  }
+
+  void _toggleLastChannel() {
+    if (_lastChannelId == null || _lastStreamUrl == null) return;
+    final tempChannel = Channel(
+      id: _lastChannelId!,
+      name: _lastChannelName ?? '',
+      streamUrl: _lastStreamUrl!,
+    );
+    _switchToChannel(tempChannel);
   }
 
   Future<void> _attemptReconnect() async {
@@ -316,7 +426,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   }
 
   Future<void> _openExternal() async {
-    final url = widget.streamUrl;
+    final url = _currentStreamUrl;
     final vlcUrl = 'vlc://$url';
     final uri = Uri.parse(vlcUrl);
     if (await canLaunchUrl(uri)) {
@@ -545,6 +655,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     }
   }
 
+  static Widget _noControls(VideoState state) => const SizedBox.shrink();
+
   @override
   void dispose() {
     _hideTimer?.cancel();
@@ -555,6 +667,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     _errorSub?.cancel();
     _completedSub?.cancel();
     _tracksSub?.cancel();
+    _positionSub?.cancel();
     _player.dispose();
     WakelockPlus.disable();
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
@@ -573,19 +686,27 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       body: GestureDetector(
         onTap: _toggleControls,
         onDoubleTap: _toggleFullscreen,
+        onVerticalDragEnd: _channelList != null ? (details) {
+          final velocity = details.primaryVelocity ?? 0;
+          if (velocity < -300) {
+            _zapChannel(1);
+          } else if (velocity > 300) {
+            _zapChannel(-1);
+          }
+        } : null,
         child: Stack(
           fit: StackFit.expand,
           children: [
             Center(
               child: _aspectMode == AspectMode.fit
-                  ? Video(controller: _videoController, fill: Colors.black)
+                  ? Video(controller: _videoController, fill: Colors.black, controls: _noControls)
                   : FittedBox(
                       fit: _videoFit,
                       clipBehavior: Clip.hardEdge,
                       child: SizedBox(
                         width: MediaQuery.of(context).size.width,
                         height: MediaQuery.of(context).size.height,
-                        child: Video(controller: _videoController, fill: Colors.black),
+                        child: Video(controller: _videoController, fill: Colors.black, controls: _noControls),
                       ),
                     ),
             ),
@@ -791,7 +912,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                         ),
                         const SizedBox(height: 2),
                         Text(
-                          widget.channelName,
+                          _currentChannelName,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
@@ -803,6 +924,30 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                       ],
                     ),
                   ),
+                  if (_lastChannelId != null)
+                    GestureDetector(
+                      onTap: _toggleLastChannel,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                        margin: const EdgeInsets.only(right: 8),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.swap_horiz_rounded, color: Colors.white70, size: 14),
+                            const SizedBox(width: 4),
+                            Text(
+                              l.lastChannel,
+                              style: const TextStyle(color: Colors.white70, fontSize: 11, fontWeight: FontWeight.w600),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
                   if (_playbackSpeed != 1.0)
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),

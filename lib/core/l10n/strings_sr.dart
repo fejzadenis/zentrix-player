@@ -139,4 +139,57 @@ const Map<String, String> stringsSr = {
   'episodes': 'Epizode',
   'season': 'Sezona',
   'episode': 'Epizoda',
+
+  // Multi-view
+  'multiView': 'Više prikaza',
+  'selectChannels': 'Izaberite kanale za višestruki prikaz',
+  'startMultiView': 'Pokreni više prikaza',
+  'selectUpTo4': 'Izaberite 2-4 kanala',
+
+  // Channel zapping
+  'lastChannel': 'Poslednji kanal',
+  'swipeToZap': 'Prevucite za promenu kanala',
+  'channelUp': 'Kanal gore',
+  'channelDown': 'Kanal dole',
+
+  // Resume
+  'resumePlayback': 'Nastavi',
+  'resumeFrom': 'Nastavi od {position}',
+  'startOver': 'Počni ispočetka',
+
+  // Parental
+  'parentalLock': 'Roditeljsko zaključavanje',
+  'parentalLockDesc': 'Zaštitite sadržaj PIN kodom',
+  'setPin': 'Postavi PIN',
+  'enterPin': 'Unesite PIN',
+  'confirmPin': 'Potvrdite PIN',
+  'pinSet': 'PIN je postavljen',
+  'pinMismatch': 'PIN-ovi se ne poklapaju',
+  'wrongPin': 'Pogrešan PIN',
+  'enterCurrentPin': 'Unesite trenutni PIN za nastavak',
+  'parentalEnabled': 'Roditeljsko zaključavanje uključeno',
+  'parentalDisabled': 'Roditeljsko zaključavanje isključeno',
+  'hiddenCategories': 'Skrivene kategorije',
+  'hiddenCategoriesDesc': 'Sakrijte kategorije iza roditeljskog zaključavanja',
+  'categoryHidden': 'Kategorija sakrivena',
+  'categoryShown': 'Kategorija vidljiva',
+  'unlock': 'Otključaj',
+  'locked': 'Zaključano',
+
+  // Sorting
+  'channelSorting': 'Sortiranje kanala',
+  'sortAZ': 'A-Z',
+  'sortZA': 'Z-A',
+  'sortCustom': 'Prilagođeno',
+  'sortRecent': 'Nedavno gledano',
+
+  // Device
+  'deviceInfo': 'Informacije o uređaju',
+  'macAddress': 'MAC adresa',
+  'copied': 'Kopirano u clipboard',
+
+  // Misc
+  'noResults': 'Nema rezultata',
+  'selectAll': 'Izaberi sve',
+  'deselectAll': 'Poništi sve',
 };

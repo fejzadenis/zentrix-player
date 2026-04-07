@@ -357,6 +357,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
               'streamUrl': channel.streamUrl,
               'channelName': channel.name,
               'channelId': channel.id,
+              'channelList': results,
+              'currentIndex': index,
             });
           },
           onFavoriteToggle: () {

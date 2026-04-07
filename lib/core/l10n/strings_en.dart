@@ -139,4 +139,57 @@ const Map<String, String> stringsEn = {
   'episodes': 'Episodes',
   'season': 'Season',
   'episode': 'Episode',
+
+  // Multi-view
+  'multiView': 'Multi-View',
+  'selectChannels': 'Select channels for multi-view',
+  'startMultiView': 'Start Multi-View',
+  'selectUpTo4': 'Select 2-4 channels',
+
+  // Channel zapping
+  'lastChannel': 'Last Channel',
+  'swipeToZap': 'Swipe to change channel',
+  'channelUp': 'Channel Up',
+  'channelDown': 'Channel Down',
+
+  // Resume
+  'resumePlayback': 'Resume',
+  'resumeFrom': 'Resume from {position}',
+  'startOver': 'Start Over',
+
+  // Parental
+  'parentalLock': 'Parental Lock',
+  'parentalLockDesc': 'Protect content with a PIN code',
+  'setPin': 'Set PIN',
+  'enterPin': 'Enter PIN',
+  'confirmPin': 'Confirm PIN',
+  'pinSet': 'PIN has been set',
+  'pinMismatch': 'PINs do not match',
+  'wrongPin': 'Wrong PIN',
+  'enterCurrentPin': 'Enter current PIN to continue',
+  'parentalEnabled': 'Parental lock enabled',
+  'parentalDisabled': 'Parental lock disabled',
+  'hiddenCategories': 'Hidden Categories',
+  'hiddenCategoriesDesc': 'Hide categories behind parental lock',
+  'categoryHidden': 'Category hidden',
+  'categoryShown': 'Category visible',
+  'unlock': 'Unlock',
+  'locked': 'Locked',
+
+  // Sorting
+  'channelSorting': 'Channel Sorting',
+  'sortAZ': 'A-Z',
+  'sortZA': 'Z-A',
+  'sortCustom': 'Custom',
+  'sortRecent': 'Recently Watched',
+
+  // Device
+  'deviceInfo': 'Device Info',
+  'macAddress': 'MAC Address',
+  'copied': 'Copied to clipboard',
+
+  // Misc
+  'noResults': 'No results',
+  'selectAll': 'Select All',
+  'deselectAll': 'Deselect All',
 };

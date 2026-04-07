@@ -58,6 +58,8 @@ class FavoritesScreen extends ConsumerWidget {
                       'streamUrl': channel.streamUrl,
                       'channelName': channel.name,
                       'channelId': channel.id,
+                      'channelList': favorites,
+                      'currentIndex': index,
                     });
                   },
                   onFavoriteToggle: () {

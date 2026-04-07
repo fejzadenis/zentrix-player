@@ -163,6 +163,58 @@ class AppLocalizations {
   String get noSeriesLoaded => get('noSeriesLoaded');
   String get moviesWillAppear => get('moviesWillAppear');
   String get seriesWillAppear => get('seriesWillAppear');
+
+  // --- Multi-view ---
+  String get multiView => get('multiView');
+  String get selectChannels => get('selectChannels');
+  String get startMultiView => get('startMultiView');
+  String get selectUpTo4 => get('selectUpTo4');
+
+  // --- Channel zapping ---
+  String get lastChannel => get('lastChannel');
+  String get swipeToZap => get('swipeToZap');
+
+  // --- Resume ---
+  String get resumePlayback => get('resumePlayback');
+  String resumeFrom(String position) =>
+      get('resumeFrom').replaceFirst('{position}', position);
+  String get startOver => get('startOver');
+
+  // --- Parental ---
+  String get parentalLock => get('parentalLock');
+  String get parentalLockDesc => get('parentalLockDesc');
+  String get setPin => get('setPin');
+  String get enterPin => get('enterPin');
+  String get confirmPin => get('confirmPin');
+  String get pinSet => get('pinSet');
+  String get pinMismatch => get('pinMismatch');
+  String get wrongPin => get('wrongPin');
+  String get enterCurrentPin => get('enterCurrentPin');
+  String get parentalEnabled => get('parentalEnabled');
+  String get parentalDisabled => get('parentalDisabled');
+  String get hiddenCategories => get('hiddenCategories');
+  String get hiddenCategoriesDesc => get('hiddenCategoriesDesc');
+  String get categoryHidden => get('categoryHidden');
+  String get categoryShown => get('categoryShown');
+  String get unlock => get('unlock');
+  String get locked => get('locked');
+
+  // --- Sorting ---
+  String get channelSorting => get('channelSorting');
+  String get sortAZ => get('sortAZ');
+  String get sortZA => get('sortZA');
+  String get sortCustom => get('sortCustom');
+  String get sortRecent => get('sortRecent');
+
+  // --- Device ---
+  String get deviceInfo => get('deviceInfo');
+  String get macAddress => get('macAddress');
+  String get copied => get('copied');
+
+  // --- Misc ---
+  String get noResults => get('noResults');
+  String get selectAll => get('selectAll');
+  String get deselectAll => get('deselectAll');
 }
 
 class _AppLocalizationsDelegate

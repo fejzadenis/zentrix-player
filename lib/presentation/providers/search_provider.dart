@@ -11,9 +11,26 @@ final searchResultsProvider = Provider<List<Channel>>((ref) {
   if (query.isEmpty) return [];
 
   final lower = query.toLowerCase();
-  return channelState.channels
-      .where((ch) =>
-          ch.name.toLowerCase().contains(lower) ||
-          ch.category.toLowerCase().contains(lower))
-      .toList();
+  final exact = <Channel>[];
+  final fuzzy = <Channel>[];
+
+  for (final ch in channelState.channels) {
+    final nameLower = ch.name.toLowerCase();
+    final catLower = ch.category.toLowerCase();
+    if (nameLower.contains(lower) || catLower.contains(lower)) {
+      exact.add(ch);
+    } else if (_fuzzyMatch(lower, nameLower)) {
+      fuzzy.add(ch);
+    }
+  }
+
+  return [...exact, ...fuzzy];
 });
+
+bool _fuzzyMatch(String pattern, String text) {
+  int pi = 0;
+  for (int ti = 0; ti < text.length && pi < pattern.length; ti++) {
+    if (text[ti] == pattern[pi]) pi++;
+  }
+  return pi == pattern.length;
+}

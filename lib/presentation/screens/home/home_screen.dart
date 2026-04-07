@@ -13,6 +13,7 @@ import '../../widgets/channel_tile.dart';
 import '../../widgets/category_sidebar.dart';
 import '../../widgets/shimmer_loading.dart';
 import '../series/series_detail_screen.dart';
+import '../player/multi_view_screen.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
@@ -46,10 +47,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   }
 
   void _openPlayer(Channel channel) {
+    final state = ref.read(channelProvider);
+    final list = state.filteredChannels;
+    final index = list.indexWhere((c) => c.id == channel.id);
+
     context.push('/player', extra: {
       'streamUrl': channel.streamUrl,
       'channelName': channel.name,
       'channelId': channel.id,
+      'channelList': list,
+      'currentIndex': index,
     });
   }
 
@@ -66,6 +73,29 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           IconButton(
             icon: const Icon(Icons.search_rounded),
             onPressed: () => context.push('/search'),
+          ),
+          if (channelState.liveCount > 1)
+            IconButton(
+              icon: const Icon(Icons.grid_view_rounded),
+              tooltip: l.multiView,
+              onPressed: () => _showMultiViewPicker(context, ref, channelState, l),
+            ),
+          PopupMenuButton<String>(
+            icon: const Icon(Icons.sort_rounded),
+            tooltip: l.channelSorting,
+            onSelected: (value) {
+              ref.read(channelProvider.notifier).sortChannels(value);
+            },
+            itemBuilder: (ctx) => [
+              PopupMenuItem(
+                value: 'az',
+                child: _SortMenuItem(icon: Icons.sort_by_alpha_rounded, label: l.sortAZ),
+              ),
+              PopupMenuItem(
+                value: 'za',
+                child: _SortMenuItem(icon: Icons.sort_by_alpha_rounded, label: l.sortZA),
+              ),
+            ],
           ),
           IconButton(
             icon: const Icon(Icons.playlist_add_rounded),
@@ -86,6 +116,112 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
               : isWide
                   ? _buildWideLayout(context, ref, channelState)
                   : _buildNarrowLayout(context, ref, channelState, l),
+    );
+  }
+
+  void _showMultiViewPicker(
+    BuildContext context,
+    WidgetRef ref,
+    ChannelState state,
+    AppLocalizations l,
+  ) {
+    final liveChannels = state.liveChannels;
+    final selected = <Channel>{};
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setSheetState) {
+            return DraggableScrollableSheet(
+              initialChildSize: 0.7,
+              maxChildSize: 0.9,
+              minChildSize: 0.4,
+              expand: false,
+              builder: (_, scrollCtrl) {
+                return Column(
+                  children: [
+                    const SizedBox(height: 8),
+                    Container(
+                      width: 40,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: Colors.white24,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(l.multiView, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+                              const SizedBox(height: 2),
+                              Text(
+                                l.selectUpTo4,
+                                style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
+                              ),
+                            ],
+                          ),
+                          FilledButton.icon(
+                            onPressed: selected.length >= 2
+                                ? () {
+                                    Navigator.pop(ctx);
+                                    Navigator.of(context).push(
+                                      MaterialPageRoute(
+                                        builder: (_) => MultiViewScreen(channels: selected.toList()),
+                                      ),
+                                    );
+                                  }
+                                : null,
+                            icon: const Icon(Icons.play_arrow_rounded, size: 18),
+                            label: Text('${l.startMultiView} (${selected.length})'),
+                            style: FilledButton.styleFrom(backgroundColor: AppColors.primary),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Expanded(
+                      child: ListView.builder(
+                        controller: scrollCtrl,
+                        itemCount: liveChannels.length,
+                        itemBuilder: (_, i) {
+                          final ch = liveChannels[i];
+                          final isSelected = selected.contains(ch);
+                          return ListTile(
+                            leading: isSelected
+                                ? const Icon(Icons.check_circle_rounded, color: AppColors.primary)
+                                : const Icon(Icons.radio_button_unchecked, color: Colors.white38),
+                            title: Text(ch.name),
+                            subtitle: Text(ch.category, style: TextStyle(color: AppColors.textSecondary, fontSize: 12)),
+                            onTap: () {
+                              setSheetState(() {
+                                if (isSelected) {
+                                  selected.remove(ch);
+                                } else if (selected.length < 4) {
+                                  selected.add(ch);
+                                }
+                              });
+                            },
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                );
+              },
+            );
+          },
+        );
+      },
     );
   }
 
@@ -201,11 +337,23 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     final recentlyWatched = ref.watch(recentlyWatchedProvider);
     final continueWatching = ref.watch(continueWatchingProvider);
     final trendingChannels = ref.watch(trendingProvider);
+    final favoriteChannels = ref.watch(favoriteChannelsProvider);
 
     final showDiscovery = state.selectedCategory == 'all';
 
     return CustomScrollView(
       slivers: [
+        if (showDiscovery && favoriteChannels.isNotEmpty)
+          SliverToBoxAdapter(
+            child: _DiscoverySection(
+              title: l.favorites,
+              icon: Icons.favorite_rounded,
+              iconColor: AppColors.error,
+              channels: favoriteChannels,
+              onChannelTap: _openPlayer,
+            ),
+          ),
+
         if (showDiscovery && continueWatching.isNotEmpty)
           SliverToBoxAdapter(
             child: _DiscoverySection(
@@ -286,13 +434,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                 final currentProgram = epgNotifier.getCurrentProgram(channel.tvgId);
                 final isFav = ref.watch(favoritesProvider).contains(channel.id);
 
-                return ChannelTile(
-                  channel: channel.copyWith(isFavorite: isFav),
-                  currentProgram: currentProgram?.title,
-                  onTap: () => _openPlayer(channel),
-                  onFavoriteToggle: () {
-                    ref.read(favoritesProvider.notifier).toggle(channel.id);
-                  },
+                return RepaintBoundary(
+                  child: ChannelTile(
+                    channel: channel.copyWith(isFavorite: isFav),
+                    currentProgram: currentProgram?.title,
+                    onTap: () => _openPlayer(channel),
+                    onFavoriteToggle: () {
+                      ref.read(favoritesProvider.notifier).toggle(channel.id);
+                    },
+                  ),
                 );
               },
               childCount: state.filteredChannels.length,
@@ -458,6 +608,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     return ListView.builder(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       itemCount: channels.length,
+      cacheExtent: 500,
       itemBuilder: (context, index) {
         final channel = channels[index];
         final epgNotifier = ref.read(epgProvider.notifier);
@@ -691,6 +842,23 @@ class _DiscoverySection extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _SortMenuItem extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  const _SortMenuItem({required this.icon, required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Icon(icon, size: 18),
+        const SizedBox(width: 8),
+        Text(label),
+      ],
     );
   }
 }

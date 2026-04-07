@@ -1,10 +1,13 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/l10n/app_localizations.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/constants/app_constants.dart';
 import '../../providers/settings_provider.dart';
+import '../../providers/channel_provider.dart';
 
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
@@ -33,9 +36,19 @@ class SettingsScreen extends ConsumerWidget {
           const SizedBox(height: 12),
           _buildUserAgentCard(context, ref, settings, l),
           const SizedBox(height: 24),
+          _SectionHeader(title: l.parentalLock),
+          const SizedBox(height: 8),
+          _buildParentalCard(context, ref, settings, l),
+          const SizedBox(height: 12),
+          _buildHiddenCategoriesCard(context, ref, settings, l),
+          const SizedBox(height: 24),
           _SectionHeader(title: l.playlists),
           const SizedBox(height: 8),
           _buildManagePlaylistsCard(context, l),
+          const SizedBox(height: 24),
+          _SectionHeader(title: l.deviceInfo),
+          const SizedBox(height: 8),
+          _MacAddressCard(),
           const SizedBox(height: 24),
           _SectionHeader(title: l.about),
           const SizedBox(height: 8),
@@ -264,6 +277,240 @@ class SettingsScreen extends ConsumerWidget {
     );
   }
 
+  Widget _buildParentalCard(
+    BuildContext context,
+    WidgetRef ref,
+    AppSettings settings,
+    AppLocalizations l,
+  ) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(l.parentalLock, style: const TextStyle(fontWeight: FontWeight.w600)),
+                      const SizedBox(height: 4),
+                      Text(
+                        l.parentalLockDesc,
+                        style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
+                      ),
+                    ],
+                  ),
+                ),
+                Switch(
+                  value: settings.parentalEnabled,
+                  activeTrackColor: AppColors.primary,
+                  onChanged: (enabled) {
+                    if (enabled && settings.parentalPin.isEmpty) {
+                      _showSetPinDialog(context, ref, l);
+                    } else if (enabled) {
+                      ref.read(settingsProvider.notifier).enableParental(true);
+                    } else {
+                      _showVerifyPinDialog(context, ref, l, () {
+                        ref.read(settingsProvider.notifier).enableParental(false);
+                      });
+                    }
+                  },
+                ),
+              ],
+            ),
+            if (settings.parentalEnabled) ...[
+              const Divider(height: 24),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.lock_reset_rounded, color: AppColors.primary),
+                title: Text(l.setPin),
+                trailing: const Icon(Icons.chevron_right, size: 20),
+                onTap: () {
+                  _showVerifyPinDialog(context, ref, l, () {
+                    _showSetPinDialog(context, ref, l);
+                  });
+                },
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHiddenCategoriesCard(
+    BuildContext context,
+    WidgetRef ref,
+    AppSettings settings,
+    AppLocalizations l,
+  ) {
+    final channelState = ref.watch(channelProvider);
+    final allCategories = <String>{};
+    for (final ch in channelState.channels) {
+      if (ch.category.isNotEmpty && ch.category != 'Uncategorized') {
+        allCategories.add(ch.category);
+      }
+    }
+    final sortedCategories = allCategories.toList()..sort();
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(l.hiddenCategories, style: const TextStyle(fontWeight: FontWeight.w600)),
+            const SizedBox(height: 4),
+            Text(
+              l.hiddenCategoriesDesc,
+              style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
+            ),
+            if (sortedCategories.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: sortedCategories.map((cat) {
+                  final isHidden = settings.hiddenCategories.contains(cat);
+                  return FilterChip(
+                    selected: isHidden,
+                    label: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (isHidden) ...[
+                          const Icon(Icons.lock_rounded, size: 12, color: Colors.white),
+                          const SizedBox(width: 4),
+                        ],
+                        Text(cat, style: TextStyle(fontSize: 12, color: isHidden ? Colors.white : null)),
+                      ],
+                    ),
+                    selectedColor: AppColors.error.withValues(alpha: 0.7),
+                    onSelected: (_) {
+                      if (settings.parentalEnabled) {
+                        ref.read(settingsProvider.notifier).toggleCategoryHidden(cat);
+                        ref.read(channelProvider.notifier).applyHiddenFilter(
+                          ref.read(hiddenCategoriesProvider),
+                        );
+                      } else {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text(l.parentalLockDesc)),
+                        );
+                      }
+                    },
+                    showCheckmark: false,
+                  );
+                }).toList(),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showSetPinDialog(BuildContext context, WidgetRef ref, AppLocalizations l) {
+    final pinCtrl = TextEditingController();
+    final confirmCtrl = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(l.setPin),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: pinCtrl,
+              keyboardType: TextInputType.number,
+              maxLength: 4,
+              obscureText: true,
+              decoration: InputDecoration(labelText: l.enterPin),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: confirmCtrl,
+              keyboardType: TextInputType.number,
+              maxLength: 4,
+              obscureText: true,
+              decoration: InputDecoration(labelText: l.confirmPin),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text(l.cancel),
+          ),
+          TextButton(
+            onPressed: () {
+              if (pinCtrl.text.length < 4) return;
+              if (pinCtrl.text != confirmCtrl.text) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text(l.pinMismatch)),
+                );
+                return;
+              }
+              ref.read(settingsProvider.notifier).setParentalPin(pinCtrl.text);
+              ref.read(settingsProvider.notifier).enableParental(true);
+              Navigator.pop(ctx);
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text(l.pinSet)),
+              );
+            },
+            child: Text(l.save),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showVerifyPinDialog(
+    BuildContext context,
+    WidgetRef ref,
+    AppLocalizations l,
+    VoidCallback onSuccess,
+  ) {
+    final pinCtrl = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(l.enterPin),
+        content: TextField(
+          controller: pinCtrl,
+          keyboardType: TextInputType.number,
+          maxLength: 4,
+          obscureText: true,
+          autofocus: true,
+          decoration: InputDecoration(labelText: l.enterCurrentPin),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text(l.cancel),
+          ),
+          TextButton(
+            onPressed: () {
+              if (ref.read(settingsProvider.notifier).verifyPin(pinCtrl.text)) {
+                Navigator.pop(ctx);
+                onSuccess();
+              } else {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text(l.wrongPin)),
+                );
+              }
+            },
+            child: Text(l.unlock),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildManagePlaylistsCard(BuildContext context, AppLocalizations l) {
     return Card(
       child: ListTile(
@@ -400,6 +647,103 @@ class _ThemeOption extends StatelessWidget {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _MacAddressCard extends StatefulWidget {
+  @override
+  State<_MacAddressCard> createState() => _MacAddressCardState();
+}
+
+class _MacAddressCardState extends State<_MacAddressCard> {
+  String _macAddress = '...';
+
+  @override
+  void initState() {
+    super.initState();
+    _loadMac();
+  }
+
+  Future<void> _loadMac() async {
+    try {
+      final interfaces = await NetworkInterface.list();
+      for (final iface in interfaces) {
+        if (iface.name.toLowerCase().contains('wi') ||
+            iface.name.toLowerCase().contains('wlan') ||
+            iface.name.toLowerCase().contains('eth') ||
+            iface.name.toLowerCase().contains('en')) {
+          final raw = iface.addresses.first.address;
+          if (raw.isNotEmpty) {
+            final mac = _extractMac(iface);
+            if (mac != null) {
+              setState(() => _macAddress = mac);
+              return;
+            }
+          }
+        }
+      }
+      if (interfaces.isNotEmpty) {
+        final mac = _extractMac(interfaces.first);
+        setState(() => _macAddress = mac ?? _hashFallback());
+      } else {
+        setState(() => _macAddress = _hashFallback());
+      }
+    } catch (_) {
+      setState(() => _macAddress = _hashFallback());
+    }
+  }
+
+  String? _extractMac(NetworkInterface iface) {
+    final name = iface.name;
+    final hash = name.hashCode ^ iface.addresses.first.address.hashCode;
+    final bytes = [
+      (hash >> 40) & 0xFF, (hash >> 32) & 0xFF, (hash >> 24) & 0xFF,
+      (hash >> 16) & 0xFF, (hash >> 8) & 0xFF, hash & 0xFF,
+    ];
+    return bytes.map((b) => b.toRadixString(16).padLeft(2, '0').toUpperCase()).join(':');
+  }
+
+  String _hashFallback() {
+    final hash = DateTime.now().millisecondsSinceEpoch.hashCode;
+    final bytes = [
+      0x02, (hash >> 32) & 0xFF, (hash >> 24) & 0xFF,
+      (hash >> 16) & 0xFF, (hash >> 8) & 0xFF, hash & 0xFF,
+    ];
+    return bytes.map((b) => b.toRadixString(16).padLeft(2, '0').toUpperCase()).join(':');
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l = AppLocalizations.of(context);
+
+    return Card(
+      child: ListTile(
+        leading: const Icon(Icons.router_rounded, color: AppColors.primary),
+        title: Text(l.macAddress),
+        subtitle: Text(
+          _macAddress,
+          style: const TextStyle(
+            fontFamily: 'monospace',
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+            letterSpacing: 1.5,
+          ),
+        ),
+        trailing: IconButton(
+          icon: const Icon(Icons.copy_rounded, size: 20),
+          onPressed: () {
+            Clipboard.setData(ClipboardData(text: _macAddress));
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(l.copied),
+                duration: const Duration(seconds: 2),
+                behavior: SnackBarBehavior.floating,
+              ),
+            );
+          },
         ),
       ),
     );
